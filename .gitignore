@@ -1,0 +1,14 @@
+node_modules
+out
+dist
+release
+
+# Local Claude Code settings (permissions, personal config)
+.claude/settings.local.json
+*.local
+.env
+
+# Model files — large binaries, downloaded/bundled at build time
+models/*.bin
+models/*.en
+models/*.gguf
