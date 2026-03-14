@@ -1,0 +1,62 @@
+appId: com.recall.app
+productName: Recall
+copyright: Copyright © 2026
+
+directories:
+  output: release/${version}
+  buildResources: resources
+
+files:
+  - out/**/*
+  - node_modules/**/*
+  - "!node_modules/*/{CHANGELOG.md,README.md,readme.md,*.map}"
+  - "!node_modules/.cache"
+
+# Native addons and executables cannot run from inside the ASAR archive.
+# Listing them here tells electron-builder to copy them alongside the ASAR
+# as app.asar.unpacked/ so the OS can actually execute them.
+asarUnpack:
+  - "node_modules/better-sqlite3/**/*"
+  - "node_modules/keytar/**/*"
+  - "node_modules/nodejs-whisper/**/*"
+  - "node_modules/node-llama-cpp/**/*"
+  - "node_modules/@node-llama-cpp/**/*"
+  - "node_modules/ffmpeg-static/**/*"
+
+npmRebuild: true
+
+extraResources:
+  - from: models/
+    to: models/
+    filter:
+      - "**/*"
+      - "!.gitkeep"
+
+mac:
+  target:
+    - target: dmg
+      arch: [arm64]
+    - target: zip
+      arch: [arm64]
+  category: public.app-category.productivity
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  extendInfo:
+    NSMicrophoneUsageDescription: "Recall needs microphone access to record meeting audio."
+    NSCalendarsUsageDescription: "Recall integrates with Google Calendar to show your meetings."
+
+win:
+  target:
+    - target: nsis
+      arch: [x64, arm64]
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+
+# publish:  # Uncomment and configure when ready to distribute via GitHub Releases
+#   provider: github
+#   releaseType: draft
