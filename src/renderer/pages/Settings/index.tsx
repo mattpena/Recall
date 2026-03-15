@@ -4,8 +4,9 @@ import {
   Select, MenuItem, FormControl, InputLabel, InputAdornment, IconButton,
   Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions,
 } from '@mui/material'
-import { Visibility, VisibilityOff, Save, DeleteForever } from '@mui/icons-material'
+import { Visibility, VisibilityOff, Save, DeleteForever, CheckCircle } from '@mui/icons-material'
 import { useAuthStore } from '../../store/auth.store'
+import type { SlackStatus } from '../../shared/types'
 
 interface Settings {
   confluenceBaseUrl: string
@@ -34,10 +35,16 @@ export default function Settings(): React.ReactElement {
   const [deleteResult, setDeleteResult] = useState<string | null>(null)
   const { isSignedIn, userEmail, setAuthStatus } = useAuthStore()
 
+  const [slackStatus, setSlackStatus] = useState<SlackStatus | null>(null)
+  const [slackConnecting, setSlackConnecting] = useState(false)
+  const [slackError, setSlackError] = useState<string | null>(null)
+  const [disconnectDialogOpen, setDisconnectDialogOpen] = useState(false)
+
   useEffect(() => {
     window.electron.settings.get().then((s) => {
       setSettings((prev) => ({ ...prev, ...(s as Partial<Settings>) }))
     })
+    window.electron.slack.getStatus().then(setSlackStatus)
   }, [])
 
   async function handleSave(): Promise<void> {
@@ -60,6 +67,25 @@ export default function Settings(): React.ReactElement {
     await window.electron.auth.signOut()
     const status = await window.electron.auth.getStatus()
     setAuthStatus(status)
+  }
+
+  async function handleSlackConnect(): Promise<void> {
+    setSlackConnecting(true)
+    setSlackError(null)
+    try {
+      const status = await window.electron.slack.connect()
+      setSlackStatus(status)
+    } catch (err) {
+      setSlackError((err as Error).message)
+    } finally {
+      setSlackConnecting(false)
+    }
+  }
+
+  async function handleSlackDisconnect(): Promise<void> {
+    await window.electron.slack.disconnect()
+    setSlackStatus({ connected: false, teamName: null, userName: null })
+    setDisconnectDialogOpen(false)
   }
 
   async function handleDeleteAllAudio(): Promise<void> {
@@ -250,6 +276,62 @@ export default function Settings(): React.ReactElement {
             startIcon={deleting ? <CircularProgress size={14} color="inherit" /> : <DeleteForever />}
           >
             {deleting ? 'Deleting…' : 'Delete All'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Divider sx={{ my: 3 }} />
+
+      {/* Slack */}
+      <Typography variant="h6" gutterBottom>Slack</Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+        Connect Slack to share meeting notes with your team after publishing to Confluence.
+        Messages are posted from your own Slack account.
+      </Typography>
+
+      {slackError && <Alert severity="error" sx={{ mb: 2 }}>{slackError}</Alert>}
+
+      {slackStatus?.connected ? (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, color: 'success.main' }}>
+            <CheckCircle sx={{ fontSize: 18 }} />
+            <Typography variant="body2" fontWeight={500}>
+              {slackStatus.userName
+                ? `${slackStatus.userName} · ${slackStatus.teamName}`
+                : slackStatus.teamName ?? 'Connected'}
+            </Typography>
+          </Box>
+          <Button
+            size="small"
+            variant="outlined"
+            color="error"
+            onClick={() => setDisconnectDialogOpen(true)}
+          >
+            Disconnect
+          </Button>
+        </Box>
+      ) : (
+        <Button
+          variant="outlined"
+          onClick={handleSlackConnect}
+          disabled={slackConnecting}
+          startIcon={slackConnecting ? <CircularProgress size={14} color="inherit" /> : undefined}
+        >
+          {slackConnecting ? 'Connecting…' : 'Connect Slack'}
+        </Button>
+      )}
+
+      <Dialog open={disconnectDialogOpen} onClose={() => setDisconnectDialogOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>Disconnect Slack?</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Recall will no longer be able to post Slack messages. You can reconnect at any time.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDisconnectDialogOpen(false)}>Cancel</Button>
+          <Button color="error" variant="contained" onClick={handleSlackDisconnect}>
+            Disconnect
           </Button>
         </DialogActions>
       </Dialog>

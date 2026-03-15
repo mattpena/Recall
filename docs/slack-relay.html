@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Recall – Slack OAuth Relay</title>
+  <style>
+    body { font-family: sans-serif; text-align: center; padding-top: 60px; color: #333; }
+  </style>
+</head>
+<body>
+  <p>Connecting to Recall…</p>
+  <script>
+    // Bounce the Slack OAuth callback back to the local Recall listener.
+    // The port here must match SLACK_LOCAL_PORT in slack.service.ts.
+    window.location.href = 'http://127.0.0.1:47822' + window.location.search;
+  </script>
+</body>
+</html>

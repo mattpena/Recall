@@ -7,6 +7,7 @@ import * as synthesisService from '../services/synthesis.service'
 import * as confluenceService from '../services/confluence.service'
 import * as chatService from '../services/chat.service'
 import * as cleanupService from '../services/cleanup.service'
+import * as slackService from '../services/slack.service'
 import { labelsRepo } from '../db/repositories/labels.repo'
 import { transcriptsRepo } from '../db/repositories/transcripts.repo'
 import { recordingsRepo } from '../db/repositories/recordings.repo'
@@ -65,6 +66,7 @@ export function registerAllIpcHandlers(): void {
   ipcMain.handle('synthesis:generate', (_, transcriptId: string) =>
     synthesisService.generateSynthesis(transcriptId)
   )
+  ipcMain.handle('synthesis:ensureModel', () => synthesisService.ensureModel())
   ipcMain.handle('synthesis:pushToConfluence', (_, synthesisId: string) =>
     confluenceService.pushSynthesis(synthesisId)
   )
@@ -135,4 +137,13 @@ export function registerAllIpcHandlers(): void {
 
   // Manual recording cleanup
   ipcMain.handle('recordings:deleteAllAudio', () => cleanupService.deleteAllAudioFiles())
+
+  // Slack
+  ipcMain.handle('slack:getStatus', () => slackService.getStatus())
+  ipcMain.handle('slack:connect', () => slackService.startOAuth())
+  ipcMain.handle('slack:disconnect', () => slackService.disconnect())
+  ipcMain.handle('slack:getChannels', () => slackService.getChannels())
+  ipcMain.handle('slack:postMessage', (_, channelId: string, text: string) =>
+    slackService.postMessage(channelId, text)
+  )
 }

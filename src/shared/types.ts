@@ -106,3 +106,14 @@ export interface ConfluencePage {
   id: string
   title: string
 }
+
+export interface SlackChannel {
+  id: string
+  name: string
+}
+
+export interface SlackStatus {
+  connected: boolean
+  teamName: string | null
+  userName: string | null
+}
