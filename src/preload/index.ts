@@ -7,6 +7,8 @@ import type {
   CreateLabelInput,
   Label,
   PendingTranscription,
+  SlackChannel,
+  SlackStatus,
   Synthesis,
   Transcript,
   UpdateLabelInput,
@@ -78,6 +80,7 @@ const electronAPI = {
   },
 
   synthesis: {
+    ensureModel: (): Promise<string> => ipcRenderer.invoke('synthesis:ensureModel'),
     generate: (transcriptId: string): Promise<Synthesis> =>
       ipcRenderer.invoke('synthesis:generate', transcriptId),
     pushToConfluence: (synthesisId: string): Promise<{ url: string }> =>
@@ -153,6 +156,15 @@ const electronAPI = {
 
   cleanup: {
     deleteAllAudio: (): Promise<number> => ipcRenderer.invoke('recordings:deleteAllAudio'),
+  },
+
+  slack: {
+    getStatus: (): Promise<SlackStatus> => ipcRenderer.invoke('slack:getStatus'),
+    connect: (): Promise<SlackStatus> => ipcRenderer.invoke('slack:connect'),
+    disconnect: (): Promise<void> => ipcRenderer.invoke('slack:disconnect'),
+    getChannels: (): Promise<SlackChannel[]> => ipcRenderer.invoke('slack:getChannels'),
+    postMessage: (channelId: string, text: string): Promise<void> =>
+      ipcRenderer.invoke('slack:postMessage', channelId, text),
   },
 }
 

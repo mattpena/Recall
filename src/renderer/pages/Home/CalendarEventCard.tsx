@@ -1,13 +1,12 @@
 import React, { useState, useEffect } from 'react'
 import {
   Card, CardContent, Box, Typography, Chip, IconButton,
-  Menu, MenuItem, Button, CircularProgress, Collapse, Avatar, Tooltip,
+  Button, CircularProgress, Collapse, Avatar, Tooltip,
 } from '@mui/material'
 import {
-  FiberManualRecord, CheckCircle, People, AccessTime, Label,
+  FiberManualRecord, CheckCircle, People, AccessTime,
   ExpandMore, ExpandLess, LocationOn, Videocam, VideoCall,
 } from '@mui/icons-material'
-import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { useRecordingStore } from '../../store/recording.store'
 import type { CalendarEvent } from '../../../shared/types'
@@ -20,7 +19,6 @@ interface Props {
 }
 
 export default function CalendarEventCard({ event, selected, onSelect, onUpdate }: Props): React.ReactElement {
-  const [labelAnchor, setLabelAnchor] = useState<HTMLElement | null>(null)
   const [expanded, setExpanded] = useState(false)
   const navigate = useNavigate()
 
@@ -28,12 +26,6 @@ export default function CalendarEventCard({ event, selected, onSelect, onUpdate 
     status, eventId, transcriptId, durationMs,
     startRecording, stopRecording, setTranscriptReady,
   } = useRecordingStore()
-
-  const { data: labels } = useQuery({
-    queryKey: ['labels'],
-    queryFn: () => window.electron.labels.list(),
-    staleTime: 60_000,
-  })
 
   const isThisEvent = eventId === event.id
   const isOtherBusy = !isThisEvent && (
@@ -55,17 +47,6 @@ export default function CalendarEventCard({ event, selected, onSelect, onUpdate 
   function formatDuration(ms: number): string {
     const s = Math.floor(ms / 1000)
     return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
-  }
-
-  async function handleLabelSelect(labelId: string): Promise<void> {
-    setLabelAnchor(null)
-    const alreadyAssigned = event.labels.some((l) => l.id === labelId)
-    if (alreadyAssigned) {
-      await window.electron.calendar.removeLabel(event.id, labelId)
-    } else {
-      await window.electron.calendar.assignLabel(event.id, labelId)
-    }
-    onUpdate()
   }
 
   function renderRecordButton(): React.ReactElement {
@@ -237,14 +218,6 @@ export default function CalendarEventCard({ event, selected, onSelect, onUpdate 
           </Box>
 
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25, flexShrink: 0 }}>
-            <Tooltip title="Assign project label">
-              <IconButton
-                size="small"
-                onClick={(e) => { e.stopPropagation(); setLabelAnchor(e.currentTarget) }}
-              >
-                <Label sx={{ fontSize: 15 }} />
-              </IconButton>
-            </Tooltip>
             {hasDetails && (
               <Tooltip title={expanded ? 'Collapse' : 'Details'}>
                 <IconButton
@@ -312,22 +285,6 @@ export default function CalendarEventCard({ event, selected, onSelect, onUpdate 
         </Box>
       </CardContent>
 
-      <Menu anchorEl={labelAnchor} open={Boolean(labelAnchor)} onClose={() => setLabelAnchor(null)}>
-        {labels && labels.length > 0 ? (
-          labels.map((label) => (
-            <MenuItem
-              key={label.id}
-              onClick={() => handleLabelSelect(label.id)}
-              selected={event.labels.some((l) => l.id === label.id)}
-            >
-              <Box sx={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: label.color, mr: 1.5 }} />
-              {label.name}
-            </MenuItem>
-          ))
-        ) : (
-          <MenuItem disabled>No project labels — create one in Project Labels</MenuItem>
-        )}
-      </Menu>
     </Card>
   )
 }
