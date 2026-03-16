@@ -4,7 +4,7 @@ import {
   FormControl, InputLabel, Divider, Alert, Tooltip, IconButton,
   Autocomplete, TextField,
 } from '@mui/material'
-import { OpenInNew, AutoAwesome, Add, Tag, Forum, CheckCircle } from '@mui/icons-material'
+import { OpenInNew, AutoAwesome, Add, Forum, CheckCircle } from '@mui/icons-material'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import type { Transcript, Label, SlackChannel, SlackUser } from '../../../shared/types'
 
@@ -133,20 +133,24 @@ export default function ActionsPanel({
         overflow: 'hidden',
       }}
     >
-      {/* ── Labels section ─────────────────────────────────────────────── */}
-      {event && (
-        <>
-          <Box sx={{ p: 2 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 1.5 }}>
-              <Tag sx={{ fontSize: 16, color: 'text.secondary' }} />
-              <Typography variant="subtitle2" fontWeight={600} color="text.secondary">
-                Labels
-              </Typography>
-            </Box>
+      {/* ── Publish section ─────────────────────────────────────────────── */}
+      <Box sx={{ p: 2 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 1.5 }}>
+          <OpenInNew sx={{ fontSize: 16, color: 'text.secondary' }} />
+          <Typography variant="subtitle2" fontWeight={600} color="text.secondary">
+            Publish
+          </Typography>
+        </Box>
 
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 1 }}>
+        {/* Project label */}
+        {event && (
+          <Box sx={{ mb: 1.5 }}>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5, fontWeight: 500 }}>
+              Project label
+            </Typography>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 0.75 }}>
               {(event.labels ?? []).length === 0 && (
-                <Typography variant="caption" color="text.disabled">No labels</Typography>
+                <Typography variant="caption" color="text.disabled">None</Typography>
               )}
               {(event.labels ?? []).map((label) => (
                 <Chip
@@ -164,7 +168,6 @@ export default function ActionsPanel({
                 />
               ))}
             </Box>
-
             {unassignedLabels.length > 0 && (
               <FormControl size="small" fullWidth>
                 <InputLabel sx={{ fontSize: '0.75rem' }}>Add label…</InputLabel>
@@ -180,15 +183,7 @@ export default function ActionsPanel({
                   {unassignedLabels.map((label) => (
                     <MenuItem key={label.id} value={label.id} sx={{ fontSize: '0.85rem' }}>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Box
-                          sx={{
-                            width: 10,
-                            height: 10,
-                            borderRadius: '50%',
-                            bgcolor: label.color,
-                            flexShrink: 0,
-                          }}
-                        />
+                        <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: label.color, flexShrink: 0 }} />
                         {label.name}
                       </Box>
                     </MenuItem>
@@ -197,18 +192,7 @@ export default function ActionsPanel({
               </FormControl>
             )}
           </Box>
-          <Divider />
-        </>
-      )}
-
-      {/* ── Publish section ─────────────────────────────────────────────── */}
-      <Box sx={{ p: 2 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 1.5 }}>
-          <OpenInNew sx={{ fontSize: 16, color: 'text.secondary' }} />
-          <Typography variant="subtitle2" fontWeight={600} color="text.secondary">
-            Publish
-          </Typography>
-        </Box>
+        )}
 
         {synthesis ? (
           <>
@@ -268,7 +252,7 @@ export default function ActionsPanel({
           </>
         ) : (
           <Typography variant="caption" color="text.disabled">
-            Available after synthesis
+            Notes publishing available after synthesis
           </Typography>
         )}
       </Box>
