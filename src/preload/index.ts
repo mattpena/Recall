@@ -196,6 +196,7 @@ const electronAPI = {
     }> => ipcRenderer.invoke('whisper:getStatus'),
     downloadModel: (modelName: string): Promise<void> =>
       ipcRenderer.invoke('whisper:downloadModel', modelName),
+    install: (): Promise<void> => ipcRenderer.invoke('whisper:install'),
   },
 }
 

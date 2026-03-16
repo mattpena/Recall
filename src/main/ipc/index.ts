@@ -1,4 +1,4 @@
-import { ipcMain, app } from 'electron'
+import { ipcMain, app, BrowserWindow } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import * as authService from '../services/google-auth.service'
 import * as calendarService from '../services/calendar.service'
@@ -167,7 +167,11 @@ export function registerAllIpcHandlers(): void {
   })
 
   ipcMain.handle('app:installUpdate', () => {
-    autoUpdater.quitAndInstall()
+    // Force-close all windows first — on macOS, quitAndInstall() stalls
+    // if any BrowserWindow is still open.
+    app.removeAllListeners('window-all-closed')
+    BrowserWindow.getAllWindows().forEach((w) => w.destroy())
+    autoUpdater.quitAndInstall(false, true)
   })
 
   // Whisper status
@@ -177,5 +181,9 @@ export function registerAllIpcHandlers(): void {
 
   ipcMain.handle('whisper:downloadModel', (_, modelName: string) =>
     transcriptionService.downloadModelManually(modelName)
+  )
+
+  ipcMain.handle('whisper:install', () =>
+    transcriptionService.installWhisper()
   )
 }

@@ -64,6 +64,9 @@ export default function Settings(): React.ReactElement {
   // Whisper status
   const [whisperStatus, setWhisperStatus] = useState<WhisperStatus | null>(null)
   const [whisperChecking, setWhisperChecking] = useState(false)
+  const [whisperInstalling, setWhisperInstalling] = useState(false)
+  const [whisperInstallError, setWhisperInstallError] = useState<string | null>(null)
+  const [whisperInstalled, setWhisperInstalled] = useState(false)
   const [modelDownloading, setModelDownloading] = useState(false)
   const [modelDownloadPct, setModelDownloadPct] = useState(0)
   const [modelDownloadError, setModelDownloadError] = useState<string | null>(null)
@@ -108,6 +111,21 @@ export default function Settings(): React.ReactElement {
       setWhisperStatus(status)
     } finally {
       setWhisperChecking(false)
+    }
+  }
+
+  async function handleInstallWhisper(): Promise<void> {
+    setWhisperInstalling(true)
+    setWhisperInstallError(null)
+    setWhisperInstalled(false)
+    try {
+      await window.electron.whisper.install()
+      setWhisperInstalled(true)
+      await loadWhisperStatus()
+    } catch (err) {
+      setWhisperInstallError((err as Error).message)
+    } finally {
+      setWhisperInstalling(false)
     }
   }
 
@@ -309,27 +327,61 @@ export default function Settings(): React.ReactElement {
         </Box>
 
         {whisperStatus ? (
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+
+            {/* CLI install row */}
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               {whisperStatus.cliFound ? (
-                <Chip
-                  icon={<CheckCircle sx={{ fontSize: '14px !important' }} />}
-                  label="Whisper CLI installed"
-                  size="small"
-                  color="success"
-                  variant="outlined"
-                />
+                <>
+                  <Chip
+                    icon={<CheckCircle sx={{ fontSize: '14px !important' }} />}
+                    label="Whisper CLI ready"
+                    size="small"
+                    color="success"
+                    variant="outlined"
+                  />
+                  <Button
+                    size="small"
+                    variant="text"
+                    disabled={whisperInstalling}
+                    onClick={handleInstallWhisper}
+                    sx={{ fontSize: '0.72rem' }}
+                  >
+                    {whisperInstalling ? 'Reinstalling…' : 'Reinstall'}
+                  </Button>
+                </>
               ) : (
-                <Chip
-                  icon={<WarningAmber sx={{ fontSize: '14px !important' }} />}
-                  label="Whisper CLI not found"
-                  size="small"
-                  color="error"
-                  variant="outlined"
-                />
+                <>
+                  <Chip
+                    icon={<WarningAmber sx={{ fontSize: '14px !important' }} />}
+                    label="Whisper CLI not found"
+                    size="small"
+                    color="error"
+                    variant="outlined"
+                  />
+                  <Alert severity="error" sx={{ py: 0, px: 1, fontSize: '0.72rem' }}>
+                    Binary missing — try reinstalling the app.
+                  </Alert>
+                </>
               )}
             </Box>
 
+            {whisperStatus.cliFound && (
+              <>
+                {whisperInstallError && (
+                  <Alert severity="error" sx={{ fontSize: '0.72rem', py: 0.5 }}>
+                    {whisperInstallError}
+                  </Alert>
+                )}
+                {whisperInstalled && (
+                  <Alert severity="success" sx={{ fontSize: '0.72rem', py: 0.5 }}>
+                    Whisper installed successfully. Transcription should now work.
+                  </Alert>
+                )}
+              </>
+            )}
+
+            {/* Model row */}
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               {whisperStatus.modelFound ? (
                 <Chip
@@ -340,28 +392,23 @@ export default function Settings(): React.ReactElement {
                   variant="outlined"
                 />
               ) : (
-                <Chip
-                  icon={<WarningAmber sx={{ fontSize: '14px !important' }} />}
-                  label={`Model ${whisperStatus.modelName} not downloaded`}
-                  size="small"
-                  color="warning"
-                  variant="outlined"
-                />
-              )}
-              {!whisperStatus.modelFound && !modelDownloading && (
-                <Button size="small" variant="outlined" onClick={handleDownloadModel}>
-                  Download
-                </Button>
+                <>
+                  <Chip
+                    icon={<WarningAmber sx={{ fontSize: '14px !important' }} />}
+                    label={`Model ${whisperStatus.modelName} not downloaded`}
+                    size="small"
+                    color="warning"
+                    variant="outlined"
+                  />
+                  {!modelDownloading && (
+                    <Button size="small" variant="outlined" onClick={handleDownloadModel}>
+                      Download
+                    </Button>
+                  )}
+                </>
               )}
             </Box>
 
-            {!whisperStatus.cliFound && (
-              <Alert severity="error" sx={{ mt: 0.5 }}>
-                The Whisper binary is missing. This usually means the app was not built correctly.
-                Try reinstalling the app. In dev mode, run:{' '}
-                <code>cd node_modules/nodejs-whisper/cpp/whisper.cpp && cmake -B build && make -C build whisper-cli</code>
-              </Alert>
-            )}
           </Box>
         ) : (
           whisperChecking && <CircularProgress size={16} />

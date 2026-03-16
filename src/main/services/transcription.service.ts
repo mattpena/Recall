@@ -1,8 +1,11 @@
 import { join, dirname, basename } from 'path'
 import { existsSync, createWriteStream, mkdirSync, readFileSync, unlinkSync } from 'fs'
-import { spawn } from 'child_process'
+import { spawn, exec as execCb } from 'child_process'
+import { promisify } from 'util'
 import https from 'https'
 import { app } from 'electron'
+
+const exec = promisify(execCb)
 import { recordingsRepo } from '../db/repositories/recordings.repo'
 import { transcriptsRepo } from '../db/repositories/transcripts.repo'
 import { triggerAutoSynthesis } from './synthesis.service'
@@ -111,6 +114,24 @@ export function getWhisperStatus(): {
     modelName,
     modelFound: existsSync(modelPath),
     modelPath,
+  }
+}
+
+/** Fix whisper-cli so macOS will actually run it.
+ *  electron-builder unpacks the binary but macOS quarantines downloaded binaries,
+ *  silently killing any spawn attempt. chmod +x + strip the quarantine xattr. */
+export async function installWhisper(): Promise<void> {
+  const cliPath = getWhisperCliPath()
+  if (!existsSync(cliPath)) {
+    throw new Error(`whisper-cli binary not found at:\n${cliPath}\n\nTry reinstalling the app.`)
+  }
+  // Ensure executable bit is set
+  await exec(`chmod +x "${cliPath}"`)
+  // Remove macOS Gatekeeper quarantine (no-op if attr not present)
+  if (process.platform === 'darwin') {
+    try {
+      await exec(`xattr -d com.apple.quarantine "${cliPath}"`)
+    } catch { /* quarantine attr may not exist — that's fine */ }
   }
 }
 
