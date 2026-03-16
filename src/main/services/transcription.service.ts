@@ -1,5 +1,6 @@
-import { join } from 'path'
-import { existsSync, createWriteStream, mkdirSync } from 'fs'
+import { join, dirname, basename } from 'path'
+import { existsSync, createWriteStream, mkdirSync, readFileSync, unlinkSync } from 'fs'
+import { spawn } from 'child_process'
 import https from 'https'
 import { app } from 'electron'
 import { recordingsRepo } from '../db/repositories/recordings.repo'
@@ -120,6 +121,38 @@ export async function downloadModelManually(modelName: string): Promise<void> {
   await ensureModel(modelName)
 }
 
+/** Spawn whisper-cli directly using the resolved binary/model paths, bypassing nodejs-whisper's
+ *  own internal path resolution which breaks inside a packaged Electron asar. */
+function runWhisperCli(cliPath: string, modelPath: string, wavPath: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    // -otxt writes <wavPath_without_extension>.txt next to the input file
+    const proc = spawn(cliPath, ['-m', modelPath, '-f', wavPath, '-l', 'en', '-otxt'], {
+      cwd: dirname(cliPath),
+    })
+
+    let stderr = ''
+    proc.stderr?.on('data', (d: Buffer) => { stderr += d.toString() })
+
+    proc.on('error', reject)
+
+    proc.on('close', (code) => {
+      if (code !== 0) {
+        reject(new Error(`whisper-cli exited with code ${code}: ${stderr.slice(-500)}`))
+        return
+      }
+      // Output file is the wav path with its extension replaced by .txt
+      const txtPath = join(dirname(wavPath), basename(wavPath, '.wav') + '.txt')
+      try {
+        const text = readFileSync(txtPath, 'utf8').trim()
+        try { unlinkSync(txtPath) } catch { /* best-effort cleanup */ }
+        resolve(text)
+      } catch {
+        reject(new Error(`whisper-cli succeeded but output file not found at ${txtPath}\nstderr: ${stderr.slice(-300)}`))
+      }
+    })
+  })
+}
+
 export async function transcribeRecording(recordingId: string, wavPath: string): Promise<Transcript> {
   recordingsRepo.updateStatus(recordingId, 'transcribing')
   mainWindow?.webContents.send('recording:statusChange', { recordingId, status: 'transcribing' })
@@ -142,17 +175,7 @@ export async function transcribeRecording(recordingId: string, wavPath: string):
   await ensureModel(modelName)
 
   try {
-    const { nodewhisper } = await import('nodejs-whisper')
-
-    const result = await nodewhisper(wavPath, {
-      modelName,
-      whisperOptions: {
-        outputInText: true,
-        language: 'en',
-      },
-    })
-
-    const rawText = typeof result === 'string' ? result : JSON.stringify(result)
+    const rawText = await runWhisperCli(cliPath, getModelPath(modelName), wavPath)
 
     const transcript = transcriptsRepo.create({
       recordingId,
