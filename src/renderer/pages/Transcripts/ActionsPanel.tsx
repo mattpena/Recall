@@ -1,3 +1,6 @@
+// Set to true when the Slack app has public distribution enabled in api.slack.com/apps
+const SLACK_ENABLED = false
+
 import React, { useState } from 'react'
 import {
   Box, Typography, Chip, Button, CircularProgress, Select, MenuItem,
@@ -114,7 +117,7 @@ export default function ActionsPanel({
     },
   })
 
-  const showSlack = slackStatus?.connected && Boolean(synthesis)
+  const showSlack = SLACK_ENABLED && slackStatus?.connected && Boolean(synthesis)
 
   return (
     <Box

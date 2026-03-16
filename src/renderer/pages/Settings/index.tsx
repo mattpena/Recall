@@ -1,3 +1,6 @@
+// Set to true when the Slack app has public distribution enabled in api.slack.com/apps
+const SLACK_ENABLED = false
+
 import React, { useState, useEffect } from 'react'
 import {
   Box, Typography, TextField, Button, Divider, Alert, CircularProgress,
@@ -503,59 +506,65 @@ export default function Settings(): React.ReactElement {
 
       <Divider sx={{ my: 3 }} />
 
-      {/* Slack */}
-      <Typography variant="h6" gutterBottom>Slack</Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-        Connect Slack to share meeting notes with your team after publishing to Confluence.
-        Messages are posted from your own Slack account.
-      </Typography>
+      {/* Slack — hidden until public distribution is approved in api.slack.com/apps */}
+      {SLACK_ENABLED && (
+        <>
+          <Typography variant="h6" gutterBottom>Slack</Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Connect Slack to share meeting notes with your team after publishing to Confluence.
+            Messages are posted from your own Slack account.
+          </Typography>
 
-      {slackError && <Alert severity="error" sx={{ mb: 2 }}>{slackError}</Alert>}
+          {slackError && <Alert severity="error" sx={{ mb: 2 }}>{slackError}</Alert>}
 
-      {slackStatus?.connected ? (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, color: 'success.main' }}>
-            <CheckCircle sx={{ fontSize: 18 }} />
-            <Typography variant="body2" fontWeight={500}>
-              {slackStatus.userName
-                ? `${slackStatus.userName} · ${slackStatus.teamName}`
-                : slackStatus.teamName ?? 'Connected'}
-            </Typography>
-          </Box>
-          <Button
-            size="small"
-            variant="outlined"
-            color="error"
-            onClick={() => setDisconnectDialogOpen(true)}
-          >
-            Disconnect
-          </Button>
-        </Box>
-      ) : (
-        <Button
-          variant="outlined"
-          onClick={handleSlackConnect}
-          disabled={slackConnecting}
-          startIcon={slackConnecting ? <CircularProgress size={14} color="inherit" /> : undefined}
-        >
-          {slackConnecting ? 'Connecting…' : 'Connect Slack'}
-        </Button>
+          {slackStatus?.connected ? (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, color: 'success.main' }}>
+                <CheckCircle sx={{ fontSize: 18 }} />
+                <Typography variant="body2" fontWeight={500}>
+                  {slackStatus.userName
+                    ? `${slackStatus.userName} · ${slackStatus.teamName}`
+                    : slackStatus.teamName ?? 'Connected'}
+                </Typography>
+              </Box>
+              <Button
+                size="small"
+                variant="outlined"
+                color="error"
+                onClick={() => setDisconnectDialogOpen(true)}
+              >
+                Disconnect
+              </Button>
+            </Box>
+          ) : (
+            <Button
+              variant="outlined"
+              onClick={handleSlackConnect}
+              disabled={slackConnecting}
+              startIcon={slackConnecting ? <CircularProgress size={14} color="inherit" /> : undefined}
+            >
+              {slackConnecting ? 'Connecting…' : 'Connect Slack'}
+            </Button>
+          )}
+
+          <Dialog open={disconnectDialogOpen} onClose={() => setDisconnectDialogOpen(false)} maxWidth="xs" fullWidth>
+            <DialogTitle>Disconnect Slack?</DialogTitle>
+            <DialogContent>
+              <DialogContentText>
+                Recall will no longer be able to post Slack messages. You can reconnect at any time.
+              </DialogContentText>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setDisconnectDialogOpen(false)}>Cancel</Button>
+              <Button color="error" variant="contained" onClick={handleSlackDisconnect}>
+                Disconnect
+              </Button>
+            </DialogActions>
+          </Dialog>
+
+          <Divider sx={{ my: 3 }} />
+        </>
       )}
-
-      <Dialog open={disconnectDialogOpen} onClose={() => setDisconnectDialogOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle>Disconnect Slack?</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            Recall will no longer be able to post Slack messages. You can reconnect at any time.
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDisconnectDialogOpen(false)}>Cancel</Button>
-          <Button color="error" variant="contained" onClick={handleSlackDisconnect}>
-            Disconnect
-          </Button>
-        </DialogActions>
-      </Dialog>
 
       <Divider sx={{ my: 3 }} />
 
