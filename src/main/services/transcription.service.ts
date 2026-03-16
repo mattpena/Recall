@@ -146,29 +146,42 @@ export async function downloadModelManually(modelName: string): Promise<void> {
  *  own internal path resolution which breaks inside a packaged Electron asar. */
 function runWhisperCli(cliPath: string, modelPath: string, wavPath: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    // -otxt writes <wavPath_without_extension>.txt next to the input file
-    const proc = spawn(cliPath, ['-m', modelPath, '-f', wavPath, '-l', 'en', '-otxt'], {
-      cwd: dirname(cliPath),
-    })
+    // Use explicit -of so the output path is unambiguous regardless of cwd
+    const outputPrefix = join(dirname(wavPath), basename(wavPath, '.wav'))
+    const txtPath = outputPrefix + '.txt'
+
+    const proc = spawn(
+      cliPath,
+      ['-m', modelPath, '-f', wavPath, '-l', 'en', '-otxt', '-of', outputPrefix],
+      { cwd: dirname(cliPath) }
+    )
 
     let stderr = ''
+    let stdout = ''
     proc.stderr?.on('data', (d: Buffer) => { stderr += d.toString() })
+    proc.stdout?.on('data', (d: Buffer) => { stdout += d.toString() })
 
-    proc.on('error', reject)
+    proc.on('error', (err) => {
+      reject(new Error(`Failed to spawn whisper-cli: ${err.message}\nPath: ${cliPath}`))
+    })
 
     proc.on('close', (code) => {
       if (code !== 0) {
-        reject(new Error(`whisper-cli exited with code ${code}: ${stderr.slice(-500)}`))
+        reject(new Error(
+          `whisper-cli exited with code ${code}\n` +
+          `stderr: ${stderr.slice(-600)}\nstdout: ${stdout.slice(-200)}`
+        ))
         return
       }
-      // Output file is the wav path with its extension replaced by .txt
-      const txtPath = join(dirname(wavPath), basename(wavPath, '.wav') + '.txt')
       try {
         const text = readFileSync(txtPath, 'utf8').trim()
         try { unlinkSync(txtPath) } catch { /* best-effort cleanup */ }
         resolve(text)
       } catch {
-        reject(new Error(`whisper-cli succeeded but output file not found at ${txtPath}\nstderr: ${stderr.slice(-300)}`))
+        reject(new Error(
+          `whisper-cli exited 0 but output not found at:\n${txtPath}\n` +
+          `stderr: ${stderr.slice(-400)}`
+        ))
       }
     })
   })
@@ -188,7 +201,7 @@ export async function transcribeRecording(recordingId: string, wavPath: string):
       `Run: cd node_modules/nodejs-whisper/cpp/whisper.cpp && cmake -B build -DGGML_SVE=OFF -DGGML_MACHINE_SUPPORTS_sve=0 && make -C build whisper-cli`
     )
     recordingsRepo.updateStatus(recordingId, 'error')
-    mainWindow?.webContents.send('recording:statusChange', { recordingId, status: 'error' })
+    mainWindow?.webContents.send('recording:statusChange', { recordingId, status: 'error', error: err.message })
     throw err
   }
 
@@ -217,7 +230,11 @@ export async function transcribeRecording(recordingId: string, wavPath: string):
     return transcript
   } catch (error) {
     recordingsRepo.updateStatus(recordingId, 'error')
-    mainWindow?.webContents.send('recording:statusChange', { recordingId, status: 'error' })
+    mainWindow?.webContents.send('recording:statusChange', {
+      recordingId,
+      status: 'error',
+      error: (error as Error).message,
+    })
     throw error
   }
 }

@@ -50,10 +50,10 @@ const electronAPI = {
       ipcRenderer.invoke('recording:appendChunk', recordingId, chunk),
     getStatus: (recordingId: string): Promise<string> =>
       ipcRenderer.invoke('recording:getStatus', recordingId),
-    onStatusChange: (cb: (payload: { recordingId: string; status: string }) => void) => {
+    onStatusChange: (cb: (payload: { recordingId: string; status: string; error?: string }) => void) => {
       const handler = (
         _: Electron.IpcRendererEvent,
-        payload: { recordingId: string; status: string }
+        payload: { recordingId: string; status: string; error?: string }
       ) => cb(payload)
       ipcRenderer.on('recording:statusChange', handler)
       return () => ipcRenderer.removeListener('recording:statusChange', handler)

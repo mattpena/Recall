@@ -40,8 +40,8 @@ export default function CalendarEventCard({ event, selected, onSelect, onUpdate 
       if (rid === recordingId) setTranscriptReady(event.id, transcriptId)
     })
 
-    const unsubStatus = window.electron.recording.onStatusChange(({ recordingId: rid, status }) => {
-      if (rid === recordingId && status === 'error') setSessionError(event.id)
+    const unsubStatus = window.electron.recording.onStatusChange(({ recordingId: rid, status, error }) => {
+      if (rid === recordingId && status === 'error') setSessionError(event.id, error)
     })
 
     return () => {
@@ -308,8 +308,8 @@ export default function CalendarEventCard({ event, selected, onSelect, onUpdate 
         </Collapse>
 
         {session?.status === 'error' && (
-          <Typography variant="caption" color="error" sx={{ display: 'block', mt: 0.5 }}>
-            Transcription failed — check Settings to verify Whisper is installed.
+          <Typography variant="caption" color="error" sx={{ display: 'block', mt: 0.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+            Transcription failed{session.errorMessage ? `:\n${session.errorMessage}` : ' — check Settings → Transcription.'}
           </Typography>
         )}
 

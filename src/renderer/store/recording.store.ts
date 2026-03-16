@@ -6,6 +6,7 @@ export interface EventSession {
   recordingId: string
   status: RecordingStatus
   transcriptId?: string
+  errorMessage?: string
 }
 
 interface RecordingState {
@@ -23,7 +24,7 @@ interface RecordingActions {
   startRecording: (eventId: string) => Promise<void>
   stopRecording: (eventId: string) => Promise<void>
   setTranscriptReady: (eventId: string, transcriptId: string) => void
-  setSessionError: (eventId: string) => void
+  setSessionError: (eventId: string, errorMessage?: string) => void
 }
 
 const initialState: RecordingState = {
@@ -48,11 +49,11 @@ export const useRecordingStore = create<RecordingState & RecordingActions>((set,
       },
     })),
 
-  setSessionError: (eventId) =>
+  setSessionError: (eventId, errorMessage) =>
     set((state) => ({
       sessions: {
         ...state.sessions,
-        [eventId]: { ...state.sessions[eventId], status: 'error' },
+        [eventId]: { ...state.sessions[eventId], status: 'error', errorMessage },
       },
     })),
 
