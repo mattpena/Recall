@@ -9,11 +9,9 @@ import Labels from './pages/Labels'
 import Settings from './pages/Settings'
 import { useAuthStore } from './store/auth.store'
 import SignIn from './pages/SignIn'
-import SetupWizard from './pages/Setup'
 
 export default function App(): React.ReactElement {
   const { isSignedIn, setAuthStatus } = useAuthStore()
-  const [onboardingComplete, setOnboardingComplete] = useState<boolean | null>(null)
   const [authLoaded, setAuthLoaded] = useState(false)
 
   useEffect(() => {
@@ -25,28 +23,8 @@ export default function App(): React.ReactElement {
     return unsubscribe
   }, [setAuthStatus])
 
-  useEffect(() => {
-    window.electron.settings.get().then((s) => {
-      setOnboardingComplete(Boolean(s['onboardingComplete']))
-    })
-  }, [])
+  if (!authLoaded) return <></>
 
-  // Wait for both auth status and settings to resolve before routing
-  if (!authLoaded || onboardingComplete === null) return <></>
-
-  // New user: not onboarded and not signed in → show wizard
-  if (!onboardingComplete && !isSignedIn) {
-    return (
-      <SetupWizard
-        onComplete={() => {
-          window.electron.settings.set('onboardingComplete', true)
-          setOnboardingComplete(true)
-        }}
-      />
-    )
-  }
-
-  // Signed out after completing onboarding
   if (!isSignedIn) {
     return <SignIn />
   }
