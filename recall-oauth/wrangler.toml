@@ -1,0 +1,9 @@
+name = "recall-oauth"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+# Secrets are set via CLI — never committed to git:
+#   wrangler secret put GOOGLE_CLIENT_ID
+#   wrangler secret put GOOGLE_CLIENT_SECRET
+#   wrangler secret put SLACK_CLIENT_ID
+#   wrangler secret put SLACK_CLIENT_SECRET

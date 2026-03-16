@@ -9,20 +9,21 @@ async function getKeytar(): Promise<any> {
   return (mod as any).default ?? mod
 }
 
-// Local listener port — must match the port the relay page redirects to
-const SLACK_LOCAL_PORT = 47822
+// Public — safe to ship in the binary. The client_secret never leaves the worker.
+// TODO: replace with your new Slack app's client ID after re-creating it at api.slack.com/apps
+const SLACK_CLIENT_ID = 'YOUR_SLACK_CLIENT_ID'
 
-function getSlackCredentials(): { clientId: string; clientSecret: string; redirectUri: string } {
-  const clientId = store.get('slackClientId', '') as string
-  const clientSecret = store.get('slackClientSecret', '') as string
-  const redirectUri = store.get('slackRedirectUri', '') as string
-  if (!clientId || !clientSecret || !redirectUri) {
-    throw new Error(
-      'Slack app credentials are not configured. Please enter your Slack Client ID, Secret, and Redirect URI in Settings.'
-    )
-  }
-  return { clientId, clientSecret, redirectUri }
-}
+// Redirect URI registered in your Slack app → OAuth & Permissions → Redirect URLs.
+// This HTTPS relay page bounces the ?code=... back to the local loopback listener.
+// TODO: replace with your deployed relay URL (same one as before, no change needed there)
+const SLACK_REDIRECT_URI = 'https://glowing-wisp-08a1e9.netlify.app/'
+
+// Cloudflare Worker — same worker used for Google, handles Slack token exchange too.
+// TODO: replace with your deployed worker URL after running `cd recall-oauth && npm run deploy`
+const OAUTH_WORKER_URL = 'https://recall-oauth.YOUR_SUBDOMAIN.workers.dev'
+
+// Local loopback port — must match the port the relay page redirects to
+const SLACK_LOCAL_PORT = 47822
 
 const KEYTAR_SERVICE = 'recall'
 const KEYTAR_ACCOUNT = 'slack-token'
@@ -80,15 +81,13 @@ export async function getStatus(): Promise<SlackStatus> {
 }
 
 export async function startOAuth(): Promise<SlackStatus> {
-  const { clientId, clientSecret, redirectUri } = getSlackCredentials()
-
   const { codeProm } = await startLoopbackServer()
 
   const params = new URLSearchParams({
-    client_id: clientId,
+    client_id: SLACK_CLIENT_ID,
     scope: '',
     user_scope: 'channels:read,groups:read,chat:write',
-    redirect_uri: redirectUri,
+    redirect_uri: SLACK_REDIRECT_URI,
   })
   const authUrl = `https://slack.com/oauth/v2/authorize?${params.toString()}`
   await shell.openExternal(authUrl)
@@ -100,16 +99,11 @@ export async function startOAuth(): Promise<SlackStatus> {
     ),
   ])
 
-  // Exchange code for token
-  const tokenRes = await fetch('https://slack.com/api/oauth.v2.access', {
+  // Exchange code via worker — client_secret stays server-side
+  const tokenRes = await fetch(`${OAUTH_WORKER_URL}/slack/token`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      client_id: clientId,
-      client_secret: clientSecret,
-      code,
-      redirect_uri: redirectUri,
-    }).toString(),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code, redirect_uri: SLACK_REDIRECT_URI }),
   })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

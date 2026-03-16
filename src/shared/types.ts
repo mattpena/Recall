@@ -81,12 +81,7 @@ export interface AppSettings {
   confluenceEmail: string
   confluenceApiToken: string
   whisperModel: 'tiny.en' | 'base.en' | 'medium.en' | 'large'
-  googleClientId: string
-  googleClientSecret: string
   recordingRetentionDays: number // Days to keep audio files before auto-deletion (default 30)
-  slackClientId: string
-  slackClientSecret: string
-  slackRedirectUri: string
 }
 
 export interface PendingTranscription {

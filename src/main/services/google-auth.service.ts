@@ -2,7 +2,6 @@ import { shell } from 'electron'
 import { OAuth2Client } from 'google-auth-library'
 import { createServer, IncomingMessage, ServerResponse } from 'http'
 import crypto from 'crypto'
-import Store from 'electron-store'
 import type { AuthStatus } from '../../shared/types'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -11,18 +10,13 @@ async function getKeytar(): Promise<any> {
   return (mod as any).default ?? mod
 }
 
-const store = new Store()
+// Public — safe to ship in the binary. The client_secret never leaves the worker.
+// TODO: replace with your new GCP OAuth client ID after re-creating it in the console.
+const GOOGLE_CLIENT_ID = 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com'
 
-function getGoogleCredentials(): { clientId: string; clientSecret: string } {
-  const clientId = store.get('googleClientId', '') as string
-  const clientSecret = store.get('googleClientSecret', '') as string
-  if (!clientId || !clientSecret) {
-    throw new Error(
-      'Google OAuth credentials are not configured. Please enter your Client ID and Secret in Settings.'
-    )
-  }
-  return { clientId, clientSecret }
-}
+// Cloudflare Worker URL — handles token exchange and refresh with the secret server-side.
+// TODO: replace with your deployed worker URL after running `cd recall-oauth && npm run deploy`
+const OAUTH_WORKER_URL = 'https://recall-oauth.YOUR_SUBDOMAIN.workers.dev'
 
 interface TokenData {
   accessToken: string
@@ -41,13 +35,13 @@ const SCOPES = [
   'https://www.googleapis.com/auth/userinfo.profile',
 ]
 
+// Client ID is public; the secret lives only in the worker.
 function getOAuthClient(redirectUri?: string): OAuth2Client {
-  const { clientId, clientSecret } = getGoogleCredentials()
   if (redirectUri) {
-    return new OAuth2Client({ clientId, clientSecret, redirectUri })
+    return new OAuth2Client({ clientId: GOOGLE_CLIENT_ID, redirectUri })
   }
   if (!oauthClient) {
-    oauthClient = new OAuth2Client({ clientId, clientSecret })
+    oauthClient = new OAuth2Client({ clientId: GOOGLE_CLIENT_ID })
   }
   return oauthClient
 }
@@ -58,6 +52,38 @@ function generateCodeVerifier(): string {
 
 function generateCodeChallenge(verifier: string): string {
   return crypto.createHash('sha256').update(verifier).digest('base64url')
+}
+
+/** Exchange auth code for tokens via the Cloudflare worker (which holds the client_secret). */
+async function exchangeCodeViaWorker(
+  code: string,
+  redirectUri: string,
+  codeVerifier: string
+): Promise<{ access_token: string; refresh_token: string; expires_in: number }> {
+  const res = await fetch(`${OAUTH_WORKER_URL}/google/token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code, redirect_uri: redirectUri, code_verifier: codeVerifier }),
+  })
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const data = (await res.json()) as any
+  if (data.error) throw new Error(`Google token exchange failed: ${data.error_description ?? data.error}`)
+  return data
+}
+
+/** Refresh an access token via the worker. */
+async function refreshViaWorker(
+  refreshToken: string
+): Promise<{ access_token: string; expires_in: number }> {
+  const res = await fetch(`${OAUTH_WORKER_URL}/google/refresh`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refresh_token: refreshToken }),
+  })
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const data = (await res.json()) as any
+  if (data.error) throw new Error(`Google token refresh failed: ${data.error_description ?? data.error}`)
+  return data
 }
 
 /** Start a temporary HTTP server on a random port, return the port and a promise that resolves with the auth code */
@@ -107,19 +133,24 @@ async function loadStoredToken(): Promise<void> {
     const email = await keytar.getPassword('recall', 'google-email')
     const name = await keytar.getPassword('recall', 'google-name')
     if (refreshToken && email) {
+      const refreshed = await refreshViaWorker(refreshToken)
       const client = getOAuthClient()
-      client.setCredentials({ refresh_token: refreshToken })
-      const { credentials } = await client.refreshAccessToken()
+      client.setCredentials({
+        access_token: refreshed.access_token,
+        refresh_token: refreshToken,
+        expiry_date: Date.now() + refreshed.expires_in * 1000,
+      })
       tokenData = {
-        accessToken: credentials.access_token!,
-        refreshToken: credentials.refresh_token ?? refreshToken,
-        expiresAt: credentials.expiry_date ?? Date.now() + 3600_000,
+        accessToken: refreshed.access_token,
+        refreshToken,
+        expiresAt: Date.now() + refreshed.expires_in * 1000,
         email,
         name: name ?? email,
       }
       oauthClient = client
     }
   } catch {
+    // Token expired or worker unreachable — user will need to sign in again
     tokenData = null
   }
 }
@@ -145,11 +176,14 @@ export async function getAccessToken(): Promise<string> {
 }
 
 async function refreshAccessToken(): Promise<void> {
+  const refreshed = await refreshViaWorker(tokenData!.refreshToken)
+  tokenData!.accessToken = refreshed.access_token
+  tokenData!.expiresAt = Date.now() + refreshed.expires_in * 1000
   const client = getOAuthClient()
-  client.setCredentials({ refresh_token: tokenData!.refreshToken })
-  const { credentials } = await client.refreshAccessToken()
-  tokenData!.accessToken = credentials.access_token!
-  tokenData!.expiresAt = credentials.expiry_date ?? Date.now() + 3600_000
+  client.setCredentials({
+    access_token: refreshed.access_token,
+    expiry_date: tokenData!.expiresAt,
+  })
 }
 
 export async function signIn(): Promise<AuthStatus> {
@@ -178,8 +212,14 @@ export async function signIn(): Promise<AuthStatus> {
     ),
   ])
 
-  const { tokens } = await client.getToken({ code, codeVerifier: verifier, redirect_uri: redirectUri })
-  client.setCredentials(tokens)
+  // Exchange code via worker — client_secret stays server-side
+  const tokens = await exchangeCodeViaWorker(code, redirectUri, verifier)
+
+  client.setCredentials({
+    access_token: tokens.access_token,
+    refresh_token: tokens.refresh_token,
+    expiry_date: Date.now() + tokens.expires_in * 1000,
+  })
   oauthClient = client
 
   const { google } = await import('googleapis')
@@ -187,14 +227,14 @@ export async function signIn(): Promise<AuthStatus> {
   const { data } = await oauth2.userinfo.get()
 
   const keytar = await getKeytar()
-  await keytar.setPassword('recall', 'google-refresh-token', tokens.refresh_token!)
+  await keytar.setPassword('recall', 'google-refresh-token', tokens.refresh_token)
   await keytar.setPassword('recall', 'google-email', data.email!)
   await keytar.setPassword('recall', 'google-name', data.name ?? data.email!)
 
   tokenData = {
-    accessToken: tokens.access_token!,
-    refreshToken: tokens.refresh_token!,
-    expiresAt: tokens.expiry_date ?? Date.now() + 3600_000,
+    accessToken: tokens.access_token,
+    refreshToken: tokens.refresh_token,
+    expiresAt: Date.now() + tokens.expires_in * 1000,
     email: data.email!,
     name: data.name ?? data.email!,
   }

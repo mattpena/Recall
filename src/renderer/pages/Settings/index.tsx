@@ -18,11 +18,6 @@ interface Settings {
   confluenceApiToken: string
   whisperModel: string
   recordingRetentionDays: number
-  googleClientId: string
-  googleClientSecret: string
-  slackClientId: string
-  slackClientSecret: string
-  slackRedirectUri: string
 }
 
 const DEFAULT_SETTINGS: Settings = {
@@ -31,11 +26,6 @@ const DEFAULT_SETTINGS: Settings = {
   confluenceApiToken: '',
   whisperModel: 'base.en',
   recordingRetentionDays: 30,
-  googleClientId: '',
-  googleClientSecret: '',
-  slackClientId: '',
-  slackClientSecret: '',
-  slackRedirectUri: '',
 }
 
 interface WhisperStatus {
@@ -262,11 +252,6 @@ export default function Settings(): React.ReactElement {
 
       {/* Google Account */}
       <Typography variant="h6" gutterBottom sx={{ mt: 2 }}>Google Account</Typography>
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mb: 2 }}>
-        {field('googleClientId', 'Google OAuth Client ID', 'xxxx.apps.googleusercontent.com')}
-        {field('googleClientSecret', 'Google OAuth Client Secret', 'GOCSPX-…', true,
-          'Create a Desktop app OAuth client at console.cloud.google.com → APIs & Services → Credentials')}
-      </Box>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
         {isSignedIn ? (
           <>
@@ -276,9 +261,7 @@ export default function Settings(): React.ReactElement {
             </Button>
           </>
         ) : (
-          <Typography variant="body2" color="text.secondary">
-            Not signed in — save credentials above first, then sign in from the Home screen.
-          </Typography>
+          <Typography variant="body2" color="text.secondary">Not signed in</Typography>
         )}
       </Box>
 
@@ -479,14 +462,6 @@ export default function Settings(): React.ReactElement {
         Connect Slack to share meeting notes with your team after publishing to Confluence.
         Messages are posted from your own Slack account.
       </Typography>
-
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mb: 2 }}>
-        {field('slackClientId', 'Slack Client ID', '1234567890.1234567890')}
-        {field('slackClientSecret', 'Slack Client Secret', '', true,
-          'Create a Slack app at api.slack.com/apps with user scopes: channels:read, groups:read, chat:write')}
-        {field('slackRedirectUri', 'Slack Redirect URI', 'https://your-relay.netlify.app/',
-          false, 'HTTPS relay URL registered in your Slack app → OAuth & Permissions → Redirect URLs')}
-      </Box>
 
       {slackError && <Alert severity="error" sx={{ mb: 2 }}>{slackError}</Alert>}
 
