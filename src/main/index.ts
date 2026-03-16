@@ -1,5 +1,6 @@
 import { app, BrowserWindow, shell } from 'electron'
 import { join } from 'path'
+import { autoUpdater } from 'electron-updater'
 import { getDb, closeDb } from './db/index'
 import { registerAllIpcHandlers } from './ipc/index'
 import { initialize as initAuth } from './services/google-auth.service'
@@ -43,6 +44,14 @@ function createWindow(): void {
 
   mainWindow.on('closed', () => {
     mainWindow = null
+  })
+
+  // Forward auto-updater events to the renderer so the Settings page can react
+  autoUpdater.on('download-progress', (info) => {
+    mainWindow?.webContents.send('app:updateProgress', Math.round(info.percent))
+  })
+  autoUpdater.on('update-downloaded', (info) => {
+    mainWindow?.webContents.send('app:updateDownloaded', info.version)
   })
 }
 

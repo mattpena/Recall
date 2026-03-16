@@ -94,6 +94,32 @@ async function ensureModel(modelName: string): Promise<void> {
   mainWindow?.webContents.send('transcription:modelDownloadProgress', { pct: 100, downloaded: 0, total: 0 })
 }
 
+export function getWhisperStatus(): {
+  cliFound: boolean
+  cliPath: string
+  modelName: string
+  modelFound: boolean
+  modelPath: string
+} {
+  const modelName = (store.get('whisperModel', 'base.en') as string) || 'base.en'
+  const cliPath = getWhisperCliPath()
+  const modelPath = getModelPath(modelName)
+  return {
+    cliFound: existsSync(cliPath),
+    cliPath,
+    modelName,
+    modelFound: existsSync(modelPath),
+    modelPath,
+  }
+}
+
+export async function downloadModelManually(modelName: string): Promise<void> {
+  // Force re-download by calling ensureModel (it skips if already present,
+  // but callers wanting a fresh download should delete the file first — this
+  // handles the common case of "model missing, click Download")
+  await ensureModel(modelName)
+}
+
 export async function transcribeRecording(recordingId: string, wavPath: string): Promise<Transcript> {
   recordingsRepo.updateStatus(recordingId, 'transcribing')
   mainWindow?.webContents.send('recording:statusChange', { recordingId, status: 'transcribing' })

@@ -3,10 +3,14 @@ import {
   Box, Typography, TextField, Button, Divider, Alert, CircularProgress,
   Select, MenuItem, FormControl, InputLabel, InputAdornment, IconButton,
   Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions,
+  LinearProgress, Chip,
 } from '@mui/material'
-import { Visibility, VisibilityOff, Save, DeleteForever, CheckCircle } from '@mui/icons-material'
+import {
+  Visibility, VisibilityOff, Save, DeleteForever, CheckCircle,
+  SystemUpdateAlt, WarningAmber,
+} from '@mui/icons-material'
 import { useAuthStore } from '../../store/auth.store'
-import type { SlackStatus } from '../../shared/types'
+import type { SlackStatus } from '../../../shared/types'
 
 interface Settings {
   confluenceBaseUrl: string
@@ -22,6 +26,14 @@ const DEFAULT_SETTINGS: Settings = {
   confluenceApiToken: '',
   whisperModel: 'base.en',
   recordingRetentionDays: 30,
+}
+
+interface WhisperStatus {
+  cliFound: boolean
+  cliPath: string
+  modelName: string
+  modelFound: boolean
+  modelPath: string
 }
 
 export default function Settings(): React.ReactElement {
@@ -40,12 +52,96 @@ export default function Settings(): React.ReactElement {
   const [slackError, setSlackError] = useState<string | null>(null)
   const [disconnectDialogOpen, setDisconnectDialogOpen] = useState(false)
 
+  // App version & updates
+  const [appVersion, setAppVersion] = useState<string>('')
+  const [updateStatus, setUpdateStatus] = useState<
+    'idle' | 'checking' | 'up-to-date' | 'available' | 'downloading' | 'ready' | 'error'
+  >('idle')
+  const [updateVersion, setUpdateVersion] = useState<string | null>(null)
+  const [updateError, setUpdateError] = useState<string | null>(null)
+  const [downloadPct, setDownloadPct] = useState(0)
+
+  // Whisper status
+  const [whisperStatus, setWhisperStatus] = useState<WhisperStatus | null>(null)
+  const [whisperChecking, setWhisperChecking] = useState(false)
+  const [modelDownloading, setModelDownloading] = useState(false)
+  const [modelDownloadPct, setModelDownloadPct] = useState(0)
+  const [modelDownloadError, setModelDownloadError] = useState<string | null>(null)
+
   useEffect(() => {
     window.electron.settings.get().then((s) => {
       setSettings((prev) => ({ ...prev, ...(s as Partial<Settings>) }))
     })
     window.electron.slack.getStatus().then(setSlackStatus)
+    window.electron.app.getVersion().then(setAppVersion)
+    loadWhisperStatus()
+
+    const unsubDownloaded = window.electron.app.onUpdateDownloaded((version) => {
+      setUpdateStatus('ready')
+      setUpdateVersion(version)
+    })
+    const unsubProgress = window.electron.app.onUpdateProgress((pct) => {
+      setUpdateStatus('downloading')
+      setDownloadPct(pct)
+    })
+    const unsubModelProgress = window.electron.transcripts.onModelDownloadProgress((p) => {
+      if (p.pct < 100) {
+        setModelDownloadPct(p.pct)
+      } else {
+        setModelDownloading(false)
+        setModelDownloadPct(100)
+        loadWhisperStatus()
+      }
+    })
+
+    return () => {
+      unsubDownloaded()
+      unsubProgress()
+      unsubModelProgress()
+    }
   }, [])
+
+  async function loadWhisperStatus(): Promise<void> {
+    setWhisperChecking(true)
+    try {
+      const status = await window.electron.whisper.getStatus()
+      setWhisperStatus(status)
+    } finally {
+      setWhisperChecking(false)
+    }
+  }
+
+  async function handleDownloadModel(): Promise<void> {
+    if (!whisperStatus) return
+    setModelDownloading(true)
+    setModelDownloadPct(0)
+    setModelDownloadError(null)
+    try {
+      await window.electron.whisper.downloadModel(whisperStatus.modelName)
+      await loadWhisperStatus()
+    } catch (err) {
+      setModelDownloadError((err as Error).message)
+    } finally {
+      setModelDownloading(false)
+    }
+  }
+
+  async function handleCheckForUpdates(): Promise<void> {
+    setUpdateStatus('checking')
+    setUpdateError(null)
+    try {
+      const result = await window.electron.app.checkForUpdates()
+      if (result.available && result.version) {
+        setUpdateStatus('available')
+        setUpdateVersion(result.version)
+      } else {
+        setUpdateStatus('up-to-date')
+      }
+    } catch (err) {
+      setUpdateStatus('error')
+      setUpdateError((err as Error).message)
+    }
+  }
 
   async function handleSave(): Promise<void> {
     setSaving(true)
@@ -188,7 +284,7 @@ export default function Settings(): React.ReactElement {
       <Divider sx={{ my: 3 }} />
 
       {/* Whisper transcription model */}
-      <Typography variant="h6" gutterBottom>Transcription Model (on-device)</Typography>
+      <Typography variant="h6" gutterBottom>Transcription (Whisper)</Typography>
       <FormControl fullWidth size="small" sx={{ mb: 1 }}>
         <InputLabel>Whisper Model</InputLabel>
         <Select
@@ -196,15 +292,93 @@ export default function Settings(): React.ReactElement {
           label="Whisper Model"
           onChange={(e) => setSettings((s) => ({ ...s, whisperModel: e.target.value }))}
         >
-          <MenuItem value="tiny.en">tiny.en — 75MB, fastest, English only</MenuItem>
-          <MenuItem value="base.en">base.en — 150MB, fast, English only (recommended)</MenuItem>
-          <MenuItem value="medium.en">medium.en — 1.5GB, accurate, English only</MenuItem>
-          <MenuItem value="large">large — 3GB, multilingual, most accurate</MenuItem>
+          <MenuItem value="tiny.en">tiny.en — 75 MB, fastest, English only</MenuItem>
+          <MenuItem value="base.en">base.en — 150 MB, fast, English only (recommended)</MenuItem>
+          <MenuItem value="medium.en">medium.en — 1.5 GB, accurate, English only</MenuItem>
+          <MenuItem value="large">large — 3 GB, multilingual, most accurate</MenuItem>
         </Select>
       </FormControl>
-      <Typography variant="caption" color="text.secondary">
-        Downloaded automatically on first use. Runs fully on-device.
-      </Typography>
+
+      {/* Whisper status */}
+      <Box sx={{ mt: 1.5, p: 1.5, border: 1, borderColor: 'divider', borderRadius: 1 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+          <Typography variant="body2" fontWeight={500}>Whisper Status</Typography>
+          <Button size="small" variant="text" onClick={loadWhisperStatus} disabled={whisperChecking}>
+            {whisperChecking ? 'Checking…' : 'Refresh'}
+          </Button>
+        </Box>
+
+        {whisperStatus ? (
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              {whisperStatus.cliFound ? (
+                <Chip
+                  icon={<CheckCircle sx={{ fontSize: '14px !important' }} />}
+                  label="Whisper CLI installed"
+                  size="small"
+                  color="success"
+                  variant="outlined"
+                />
+              ) : (
+                <Chip
+                  icon={<WarningAmber sx={{ fontSize: '14px !important' }} />}
+                  label="Whisper CLI not found"
+                  size="small"
+                  color="error"
+                  variant="outlined"
+                />
+              )}
+            </Box>
+
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              {whisperStatus.modelFound ? (
+                <Chip
+                  icon={<CheckCircle sx={{ fontSize: '14px !important' }} />}
+                  label={`Model ${whisperStatus.modelName} downloaded`}
+                  size="small"
+                  color="success"
+                  variant="outlined"
+                />
+              ) : (
+                <Chip
+                  icon={<WarningAmber sx={{ fontSize: '14px !important' }} />}
+                  label={`Model ${whisperStatus.modelName} not downloaded`}
+                  size="small"
+                  color="warning"
+                  variant="outlined"
+                />
+              )}
+              {!whisperStatus.modelFound && !modelDownloading && (
+                <Button size="small" variant="outlined" onClick={handleDownloadModel}>
+                  Download
+                </Button>
+              )}
+            </Box>
+
+            {!whisperStatus.cliFound && (
+              <Alert severity="error" sx={{ mt: 0.5 }}>
+                The Whisper binary is missing. This usually means the app was not built correctly.
+                Try reinstalling the app. In dev mode, run:{' '}
+                <code>cd node_modules/nodejs-whisper/cpp/whisper.cpp && cmake -B build && make -C build whisper-cli</code>
+              </Alert>
+            )}
+          </Box>
+        ) : (
+          whisperChecking && <CircularProgress size={16} />
+        )}
+
+        {modelDownloading && (
+          <Box sx={{ mt: 1 }}>
+            <Typography variant="caption" color="text.secondary">
+              Downloading model… {modelDownloadPct}%
+            </Typography>
+            <LinearProgress variant="determinate" value={modelDownloadPct} sx={{ mt: 0.5 }} />
+          </Box>
+        )}
+        {modelDownloadError && (
+          <Alert severity="error" sx={{ mt: 1 }}>{modelDownloadError}</Alert>
+        )}
+      </Box>
 
       <Divider sx={{ my: 3 }} />
 
@@ -335,6 +509,89 @@ export default function Settings(): React.ReactElement {
           </Button>
         </DialogActions>
       </Dialog>
+
+      <Divider sx={{ my: 3 }} />
+
+      {/* App version & updates */}
+      <Typography variant="h6" gutterBottom>App Version</Typography>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+        <Typography variant="body2" color="text.secondary">
+          Recall {appVersion || '…'}
+        </Typography>
+        {updateStatus === 'up-to-date' && (
+          <Chip
+            icon={<CheckCircle sx={{ fontSize: '14px !important' }} />}
+            label="Up to date"
+            size="small"
+            color="success"
+            variant="outlined"
+          />
+        )}
+        {updateStatus === 'available' && updateVersion && (
+          <Chip
+            label={`v${updateVersion} available`}
+            size="small"
+            color="primary"
+            variant="outlined"
+          />
+        )}
+        {updateStatus === 'ready' && (
+          <Chip
+            label="Ready to install"
+            size="small"
+            color="success"
+          />
+        )}
+      </Box>
+
+      {updateStatus === 'downloading' && (
+        <Box sx={{ mb: 2 }}>
+          <Typography variant="caption" color="text.secondary">
+            Downloading update… {downloadPct}%
+          </Typography>
+          <LinearProgress variant="determinate" value={downloadPct} sx={{ mt: 0.5 }} />
+        </Box>
+      )}
+
+      {updateError && (
+        <Alert severity="warning" sx={{ mb: 2 }} onClose={() => setUpdateError(null)}>
+          {updateError.includes('publish') || updateError.includes('provider')
+            ? 'Auto-update not configured. Check GitHub releases manually for new versions.'
+            : updateError}
+        </Alert>
+      )}
+
+      <Box sx={{ display: 'flex', gap: 1 }}>
+        {updateStatus !== 'ready' && (
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={
+              updateStatus === 'checking'
+                ? <CircularProgress size={14} color="inherit" />
+                : <SystemUpdateAlt />
+            }
+            onClick={handleCheckForUpdates}
+            disabled={updateStatus === 'checking' || updateStatus === 'downloading'}
+          >
+            {updateStatus === 'checking' ? 'Checking…' : 'Check for Updates'}
+          </Button>
+        )}
+        {updateStatus === 'ready' && (
+          <Button
+            variant="contained"
+            size="small"
+            color="primary"
+            startIcon={<SystemUpdateAlt />}
+            onClick={() => window.electron.app.installUpdate()}
+          >
+            Restart to Update
+          </Button>
+        )}
+      </Box>
+      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+        Requires the app to be distributed via GitHub Releases with auto-update configured.
+      </Typography>
 
       <Divider sx={{ my: 3 }} />
 

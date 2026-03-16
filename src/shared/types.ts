@@ -105,6 +105,12 @@ export interface UpdateLabelInput extends Partial<CreateLabelInput> {}
 export interface ConfluencePage {
   id: string
   title: string
+  /** ID of the immediate parent page/folder, or null for root-level items */
+  parentId: string | null
+  /** Full hierarchy path, e.g. "Engineering / Backend / API Design" */
+  path: string
+  /** True when this item is a Confluence folder (not a page) */
+  isFolder?: boolean
 }
 
 export interface SlackChannel {

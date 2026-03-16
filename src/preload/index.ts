@@ -166,6 +166,35 @@ const electronAPI = {
     postMessage: (channelId: string, text: string): Promise<void> =>
       ipcRenderer.invoke('slack:postMessage', channelId, text),
   },
+
+  app: {
+    getVersion: (): Promise<string> => ipcRenderer.invoke('app:getVersion'),
+    checkForUpdates: (): Promise<{ available: boolean; version?: string }> =>
+      ipcRenderer.invoke('app:checkForUpdates'),
+    installUpdate: (): Promise<void> => ipcRenderer.invoke('app:installUpdate'),
+    onUpdateDownloaded: (cb: (version: string) => void) => {
+      const handler = (_: Electron.IpcRendererEvent, version: string) => cb(version)
+      ipcRenderer.on('app:updateDownloaded', handler)
+      return () => ipcRenderer.removeListener('app:updateDownloaded', handler)
+    },
+    onUpdateProgress: (cb: (pct: number) => void) => {
+      const handler = (_: Electron.IpcRendererEvent, pct: number) => cb(pct)
+      ipcRenderer.on('app:updateProgress', handler)
+      return () => ipcRenderer.removeListener('app:updateProgress', handler)
+    },
+  },
+
+  whisper: {
+    getStatus: (): Promise<{
+      cliFound: boolean
+      cliPath: string
+      modelName: string
+      modelFound: boolean
+      modelPath: string
+    }> => ipcRenderer.invoke('whisper:getStatus'),
+    downloadModel: (modelName: string): Promise<void> =>
+      ipcRenderer.invoke('whisper:downloadModel', modelName),
+  },
 }
 
 contextBridge.exposeInMainWorld('electron', electronAPI)
