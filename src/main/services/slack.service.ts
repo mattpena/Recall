@@ -11,7 +11,7 @@ async function getKeytar(): Promise<any> {
 
 // Public — safe to ship in the binary. The client_secret never leaves the worker.
 // TODO: replace with your new Slack app's client ID after re-creating it at api.slack.com/apps
-const SLACK_CLIENT_ID = 'YOUR_SLACK_CLIENT_ID'
+const SLACK_CLIENT_ID = '10715417902625.10699080931845'
 
 // Redirect URI registered in your Slack app → OAuth & Permissions → Redirect URLs.
 // This HTTPS relay page bounces the ?code=... back to the local loopback listener.
@@ -20,7 +20,7 @@ const SLACK_REDIRECT_URI = 'https://glowing-wisp-08a1e9.netlify.app/'
 
 // Cloudflare Worker — same worker used for Google, handles Slack token exchange too.
 // TODO: replace with your deployed worker URL after running `cd recall-oauth && npm run deploy`
-const OAUTH_WORKER_URL = 'https://recall-oauth.YOUR_SUBDOMAIN.workers.dev'
+const OAUTH_WORKER_URL = 'https://recall-oauth.recallapp.workers.dev'
 
 // Local loopback port — must match the port the relay page redirects to
 const SLACK_LOCAL_PORT = 47822

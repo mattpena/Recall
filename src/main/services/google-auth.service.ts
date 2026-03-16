@@ -12,11 +12,11 @@ async function getKeytar(): Promise<any> {
 
 // Public — safe to ship in the binary. The client_secret never leaves the worker.
 // TODO: replace with your new GCP OAuth client ID after re-creating it in the console.
-const GOOGLE_CLIENT_ID = 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com'
+const GOOGLE_CLIENT_ID = '1095457101794-lqaajr8v3oqjegok2mpfoaa5giqggn5o.apps.googleusercontent.com'
 
 // Cloudflare Worker URL — handles token exchange and refresh with the secret server-side.
 // TODO: replace with your deployed worker URL after running `cd recall-oauth && npm run deploy`
-const OAUTH_WORKER_URL = 'https://recall-oauth.YOUR_SUBDOMAIN.workers.dev'
+const OAUTH_WORKER_URL = 'https://recall-oauth.recallapp.workers.dev'
 
 interface TokenData {
   accessToken: string
