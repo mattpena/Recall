@@ -9,21 +9,20 @@ async function getKeytar(): Promise<any> {
   return (mod as any).default ?? mod
 }
 
-// Recall Slack app credentials (registered once at api.slack.com)
-// User Token Scopes: channels:read, chat:write
-//
-// HTTPS relay setup (required because Slack rejects plain HTTP redirect URIs):
-//   1. Create a GitHub repo e.g. "recall-slack-oauth", enable GitHub Pages on main branch
-//   2. Add an index.html with the relay script (see docs/slack-relay.html in this repo)
-//   3. Set SLACK_REDIRECT_URI to your GitHub Pages URL
-//   4. Register that exact HTTPS URL in Slack app → OAuth & Permissions → Redirect URLs
-//   5. The relay page bounces ?code=... back to the local listener on port 47822
-const SLACK_CLIENT_ID = 'SLACK_CLIENT_ID_REMOVED'
-const SLACK_CLIENT_SECRET = 'SLACK_CLIENT_SECRET_REMOVED'
-// Replace with your GitHub Pages relay URL once deployed:
-const SLACK_REDIRECT_URI = 'https://glowing-wisp-08a1e9.netlify.app/'
 // Local listener port — must match the port the relay page redirects to
 const SLACK_LOCAL_PORT = 47822
+
+function getSlackCredentials(): { clientId: string; clientSecret: string; redirectUri: string } {
+  const clientId = store.get('slackClientId', '') as string
+  const clientSecret = store.get('slackClientSecret', '') as string
+  const redirectUri = store.get('slackRedirectUri', '') as string
+  if (!clientId || !clientSecret || !redirectUri) {
+    throw new Error(
+      'Slack app credentials are not configured. Please enter your Slack Client ID, Secret, and Redirect URI in Settings.'
+    )
+  }
+  return { clientId, clientSecret, redirectUri }
+}
 
 const KEYTAR_SERVICE = 'recall'
 const KEYTAR_ACCOUNT = 'slack-token'
@@ -81,15 +80,12 @@ export async function getStatus(): Promise<SlackStatus> {
 }
 
 export async function startOAuth(): Promise<SlackStatus> {
-  if (!SLACK_CLIENT_ID || !SLACK_CLIENT_SECRET) {
-    throw new Error('Slack app credentials are not configured. Please contact the developer.')
-  }
+  const { clientId, clientSecret, redirectUri } = getSlackCredentials()
 
   const { codeProm } = await startLoopbackServer()
-  const redirectUri = SLACK_REDIRECT_URI
 
   const params = new URLSearchParams({
-    client_id: SLACK_CLIENT_ID,
+    client_id: clientId,
     scope: '',
     user_scope: 'channels:read,groups:read,chat:write',
     redirect_uri: redirectUri,
@@ -109,8 +105,8 @@ export async function startOAuth(): Promise<SlackStatus> {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
-      client_id: SLACK_CLIENT_ID,
-      client_secret: SLACK_CLIENT_SECRET,
+      client_id: clientId,
+      client_secret: clientSecret,
       code,
       redirect_uri: redirectUri,
     }).toString(),

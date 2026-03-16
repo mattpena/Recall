@@ -84,6 +84,9 @@ export interface AppSettings {
   googleClientId: string
   googleClientSecret: string
   recordingRetentionDays: number // Days to keep audio files before auto-deletion (default 30)
+  slackClientId: string
+  slackClientSecret: string
+  slackRedirectUri: string
 }
 
 export interface PendingTranscription {

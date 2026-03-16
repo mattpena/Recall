@@ -2,6 +2,7 @@ import { shell } from 'electron'
 import { OAuth2Client } from 'google-auth-library'
 import { createServer, IncomingMessage, ServerResponse } from 'http'
 import crypto from 'crypto'
+import Store from 'electron-store'
 import type { AuthStatus } from '../../shared/types'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -10,8 +11,18 @@ async function getKeytar(): Promise<any> {
   return (mod as any).default ?? mod
 }
 
-const GOOGLE_CLIENT_ID = 'GOOGLE_CLIENT_ID_REMOVED'
-const GOOGLE_CLIENT_SECRET = 'GOOGLE_CLIENT_SECRET_REMOVED'
+const store = new Store()
+
+function getGoogleCredentials(): { clientId: string; clientSecret: string } {
+  const clientId = store.get('googleClientId', '') as string
+  const clientSecret = store.get('googleClientSecret', '') as string
+  if (!clientId || !clientSecret) {
+    throw new Error(
+      'Google OAuth credentials are not configured. Please enter your Client ID and Secret in Settings.'
+    )
+  }
+  return { clientId, clientSecret }
+}
 
 interface TokenData {
   accessToken: string
@@ -31,11 +42,12 @@ const SCOPES = [
 ]
 
 function getOAuthClient(redirectUri?: string): OAuth2Client {
+  const { clientId, clientSecret } = getGoogleCredentials()
   if (redirectUri) {
-    return new OAuth2Client({ clientId: GOOGLE_CLIENT_ID, clientSecret: GOOGLE_CLIENT_SECRET, redirectUri })
+    return new OAuth2Client({ clientId, clientSecret, redirectUri })
   }
   if (!oauthClient) {
-    oauthClient = new OAuth2Client({ clientId: GOOGLE_CLIENT_ID, clientSecret: GOOGLE_CLIENT_SECRET })
+    oauthClient = new OAuth2Client({ clientId, clientSecret })
   }
   return oauthClient
 }
