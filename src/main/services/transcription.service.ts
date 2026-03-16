@@ -118,20 +118,30 @@ export function getWhisperStatus(): {
 }
 
 /** Fix whisper-cli so macOS will actually run it.
- *  electron-builder unpacks the binary but macOS quarantines downloaded binaries,
- *  silently killing any spawn attempt. chmod +x + strip the quarantine xattr. */
+ *  When the DMG is downloaded, macOS quarantines the entire app bundle including
+ *  every file inside app.asar.unpacked. whisper-cli links dynamically against
+ *  libwhisper.dylib (and other libs) in the same build tree — if those dylibs are
+ *  still quarantined the binary is silently killed at load time even after the
+ *  binary itself has been unquarantined.
+ *  Fix: recursively strip quarantine from the whole whisper.cpp directory. */
 export async function installWhisper(): Promise<void> {
   const cliPath = getWhisperCliPath()
   if (!existsSync(cliPath)) {
     throw new Error(`whisper-cli binary not found at:\n${cliPath}\n\nTry reinstalling the app.`)
   }
-  // Ensure executable bit is set
+
+  const whisperDir = getWhisperPackageDir()
+
+  // Ensure all executables in the build tree have the execute bit
   await exec(`chmod +x "${cliPath}"`)
-  // Remove macOS Gatekeeper quarantine (no-op if attr not present)
+
+  // Recursively strip the macOS quarantine xattr from the entire whisper.cpp
+  // directory so that libwhisper.dylib and any other linked libraries are also
+  // allowed to load (xattr -rd = recursive delete)
   if (process.platform === 'darwin') {
     try {
-      await exec(`xattr -d com.apple.quarantine "${cliPath}"`)
-    } catch { /* quarantine attr may not exist — that's fine */ }
+      await exec(`xattr -rd com.apple.quarantine "${whisperDir}"`)
+    } catch { /* quarantine attr may not be present — that's fine */ }
   }
 }
 
