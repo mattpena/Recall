@@ -1,11 +1,18 @@
 import React, { useState } from 'react'
 import {
   Box, Typography, Chip, Button, CircularProgress, Select, MenuItem,
-  FormControl, InputLabel, Divider, Alert, Tooltip, IconButton, ListSubheader,
+  FormControl, InputLabel, Divider, Alert, Tooltip, IconButton,
+  Autocomplete, TextField,
 } from '@mui/material'
 import { OpenInNew, AutoAwesome, Add, Tag, Forum, CheckCircle } from '@mui/icons-material'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import type { Transcript, Label, SlackChannel, SlackUser } from '../../../shared/types'
+
+interface SlackRecipient {
+  id: string
+  label: string   // displayed in dropdown: "#general" or "@alice"
+  group: 'Channels' | 'People'
+}
 
 interface Props {
   transcript: Transcript
@@ -77,20 +84,17 @@ export default function ActionsPanel({
     staleTime: 60_000,
   })
 
-  const [selectedTarget, setSelectedTarget] = useState('')
-  // Track each send as { label, success/error } so the UI stays unlocked
-  const [sendHistory, setSendHistory] = useState<{ label: string; ok: boolean }[]>([])
+  const allRecipients: SlackRecipient[] = [
+    ...slackChannels.map((ch) => ({ id: ch.id, label: `#${ch.name}`, group: 'Channels' as const })),
+    ...slackUsers.map((u) => ({ id: u.id, label: `@${u.name || u.realName}`, group: 'People' as const })),
+  ]
 
-  function labelForTarget(id: string): string {
-    const ch = slackChannels.find((c) => c.id === id)
-    if (ch) return `#${ch.name}`
-    const u = slackUsers.find((u) => u.id === id)
-    if (u) return `@${u.name || u.realName}`
-    return id
-  }
+  const [selectedRecipient, setSelectedRecipient] = useState<SlackRecipient | null>(null)
+  const [sendHistory, setSendHistory] = useState<{ label: string; ok: boolean }[]>([])
 
   const slackMutation = useMutation({
     mutationFn: () => {
+      if (!selectedRecipient) throw new Error('No recipient selected')
       const title = event?.title ?? 'Meeting'
       const lines: string[] = [`📋 *${title}*`]
       if (synthesis?.meetingSummary) lines.push(synthesis.meetingSummary)
@@ -99,15 +103,14 @@ export default function ActionsPanel({
         synthesis.nextSteps.forEach((s) => lines.push(`• ${s}`))
       }
       if (synthesis?.confluenceUrl) lines.push(`_Full notes: ${synthesis.confluenceUrl}_`)
-      return window.electron.slack.postMessage(selectedTarget, lines.join('\n'))
+      return window.electron.slack.postMessage(selectedRecipient.id, lines.join('\n'))
     },
     onSuccess: () => {
-      setSendHistory((h) => [...h, { label: labelForTarget(selectedTarget), ok: true }])
+      setSendHistory((h) => [...h, { label: selectedRecipient!.label, ok: true }])
       slackMutation.reset()
     },
-    onError: (err: Error) => {
-      setSendHistory((h) => [...h, { label: labelForTarget(selectedTarget), ok: false }])
-      console.error(err)
+    onError: () => {
+      setSendHistory((h) => [...h, { label: selectedRecipient?.label ?? '', ok: false }])
     },
   })
 
@@ -282,36 +285,29 @@ export default function ActionsPanel({
               </Typography>
             </Box>
 
-            <FormControl size="small" fullWidth sx={{ mb: 1 }}>
-              <InputLabel sx={{ fontSize: '0.75rem' }}>Channel or person…</InputLabel>
-              <Select
-                value={selectedTarget}
-                label="Channel or person…"
-                onChange={(e) => setSelectedTarget(e.target.value as string)}
-                sx={{ fontSize: '0.8rem' }}
-              >
-                {slackChannels.length > 0 && (
-                  <ListSubheader sx={{ fontSize: '0.7rem', lineHeight: '28px' }}>
-                    Channels
-                  </ListSubheader>
-                )}
-                {slackChannels.map((ch) => (
-                  <MenuItem key={ch.id} value={ch.id} sx={{ fontSize: '0.85rem' }}>
-                    #{ch.name}
-                  </MenuItem>
-                ))}
-                {slackUsers.length > 0 && (
-                  <ListSubheader sx={{ fontSize: '0.7rem', lineHeight: '28px' }}>
-                    People
-                  </ListSubheader>
-                )}
-                {slackUsers.map((u) => (
-                  <MenuItem key={u.id} value={u.id} sx={{ fontSize: '0.85rem' }}>
-                    @{u.name || u.realName}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+            <Autocomplete
+              size="small"
+              options={allRecipients}
+              groupBy={(opt) => opt.group}
+              getOptionLabel={(opt) => opt.label}
+              value={selectedRecipient}
+              onChange={(_, val) => setSelectedRecipient(val)}
+              isOptionEqualToValue={(a, b) => a.id === b.id}
+              sx={{ mb: 1 }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  placeholder="Search channels or people…"
+                  size="small"
+                  inputProps={{ ...params.inputProps, style: { fontSize: '0.8rem' } }}
+                />
+              )}
+              renderOption={(props, opt) => (
+                <li {...props} key={opt.id} style={{ fontSize: '0.85rem' }}>
+                  {opt.label}
+                </li>
+              )}
+            />
 
             {slackMutation.error && (
               <Alert severity="error" sx={{ mb: 1, fontSize: '0.72rem', py: 0.5 }}>
@@ -324,7 +320,7 @@ export default function ActionsPanel({
               size="small"
               fullWidth
               onClick={() => slackMutation.mutate()}
-              disabled={!selectedTarget || slackMutation.isPending}
+              disabled={!selectedRecipient || slackMutation.isPending}
               startIcon={slackMutation.isPending ? <CircularProgress size={12} /> : <Forum sx={{ fontSize: 14 }} />}
               sx={{ fontSize: '0.75rem' }}
             >
