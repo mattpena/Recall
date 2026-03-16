@@ -1,6 +1,6 @@
 {
   "name": "recall",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "description": "Cross-platform desktop app for capturing, transcribing, and synthesizing meeting knowledge",
   "main": "./out/main/index.js",
   "author": "",
