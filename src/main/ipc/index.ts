@@ -1,4 +1,5 @@
-import { ipcMain } from 'electron'
+import { ipcMain, app } from 'electron'
+import { autoUpdater } from 'electron-updater'
 import * as authService from '../services/google-auth.service'
 import * as calendarService from '../services/calendar.service'
 import * as recordingService from '../services/recording.service'
@@ -145,5 +146,35 @@ export function registerAllIpcHandlers(): void {
   ipcMain.handle('slack:getChannels', () => slackService.getChannels())
   ipcMain.handle('slack:postMessage', (_, channelId: string, text: string) =>
     slackService.postMessage(channelId, text)
+  )
+
+  // App info & updates
+  ipcMain.handle('app:getVersion', () => app.getVersion())
+
+  ipcMain.handle('app:checkForUpdates', async () => {
+    try {
+      const result = await autoUpdater.checkForUpdates()
+      if (!result) return { available: false }
+      const currentVersion = app.getVersion()
+      const updateVersion = result.updateInfo.version
+      const available = updateVersion !== currentVersion
+      return { available, version: updateVersion }
+    } catch (err) {
+      // Not configured or network error — surface the message so UI can handle it
+      throw new Error((err as Error).message)
+    }
+  })
+
+  ipcMain.handle('app:installUpdate', () => {
+    autoUpdater.quitAndInstall()
+  })
+
+  // Whisper status
+  ipcMain.handle('whisper:getStatus', () =>
+    transcriptionService.getWhisperStatus()
+  )
+
+  ipcMain.handle('whisper:downloadModel', (_, modelName: string) =>
+    transcriptionService.downloadModelManually(modelName)
   )
 }

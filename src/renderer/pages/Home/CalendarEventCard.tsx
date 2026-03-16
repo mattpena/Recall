@@ -5,7 +5,7 @@ import {
 } from '@mui/material'
 import {
   FiberManualRecord, CheckCircle, People, AccessTime,
-  ExpandMore, ExpandLess, LocationOn, Videocam, VideoCall,
+  ExpandMore, ExpandLess, LocationOn, Videocam, VideoCall, ErrorOutline, Refresh,
 } from '@mui/icons-material'
 import { useNavigate } from 'react-router-dom'
 import { useRecordingStore } from '../../store/recording.store'
@@ -23,22 +23,32 @@ export default function CalendarEventCard({ event, selected, onSelect, onUpdate 
   const navigate = useNavigate()
 
   const {
-    status, eventId, transcriptId, durationMs,
-    startRecording, stopRecording, setTranscriptReady,
+    micEventId, durationMs, sessions,
+    startRecording, stopRecording, setTranscriptReady, setSessionError,
   } = useRecordingStore()
 
-  const isThisEvent = eventId === event.id
-  const isOtherBusy = !isThisEvent && (
-    status === 'recording' || status === 'stopping' || status === 'transcribing'
-  )
+  const session = sessions[event.id]
+  const isActiveMic = micEventId === event.id
+  const isOtherBusy = micEventId !== null && micEventId !== event.id
 
+  // Listen for transcription completion and errors for this event's session
   useEffect(() => {
-    if (status !== 'transcribing' || !isThisEvent) return
-    const unsubscribe = window.electron.transcripts.onComplete(({ transcriptId: tid }) => {
-      setTranscriptReady(tid)
+    if (!session || session.status !== 'transcribing') return
+    const { recordingId } = session
+
+    const unsubComplete = window.electron.transcripts.onComplete(({ recordingId: rid, transcriptId }) => {
+      if (rid === recordingId) setTranscriptReady(event.id, transcriptId)
     })
-    return unsubscribe
-  }, [status, isThisEvent, setTranscriptReady])
+
+    const unsubStatus = window.electron.recording.onStatusChange(({ recordingId: rid, status }) => {
+      if (rid === recordingId && status === 'error') setSessionError(event.id)
+    })
+
+    return () => {
+      unsubComplete()
+      unsubStatus()
+    }
+  }, [session?.status, session?.recordingId, event.id, setTranscriptReady, setSessionError])
 
   const startTime = new Date(event.startTime)
   const endTime = new Date(event.endTime)
@@ -50,14 +60,14 @@ export default function CalendarEventCard({ event, selected, onSelect, onUpdate 
   }
 
   function renderRecordButton(): React.ReactElement {
-    if (isThisEvent && status === 'done' && transcriptId) {
+    if (session?.status === 'done' && session.transcriptId) {
       return (
         <Button
           variant="contained"
           size="small"
           color="success"
           startIcon={<CheckCircle />}
-          onClick={(e) => { e.stopPropagation(); navigate(`/transcripts/${transcriptId}`) }}
+          onClick={(e) => { e.stopPropagation(); navigate(`/transcripts/${session.transcriptId}`) }}
           sx={{ whiteSpace: 'nowrap', textTransform: 'none', fontWeight: 600 }}
         >
           View Transcript
@@ -65,7 +75,24 @@ export default function CalendarEventCard({ event, selected, onSelect, onUpdate 
       )
     }
 
-    if (isThisEvent && (status === 'stopping' || status === 'transcribing')) {
+    if (session?.status === 'error') {
+      return (
+        <Button
+          variant="outlined"
+          size="small"
+          color="error"
+          startIcon={<ErrorOutline />}
+          endIcon={<Refresh sx={{ fontSize: '0.9rem !important' }} />}
+          disabled={isOtherBusy}
+          onClick={(e) => { e.stopPropagation(); startRecording(event.id) }}
+          sx={{ whiteSpace: 'nowrap', textTransform: 'none' }}
+        >
+          Retry
+        </Button>
+      )
+    }
+
+    if (session?.status === 'stopping' || session?.status === 'transcribing') {
       return (
         <Button
           variant="outlined"
@@ -74,18 +101,18 @@ export default function CalendarEventCard({ event, selected, onSelect, onUpdate 
           startIcon={<CircularProgress size={12} color="inherit" />}
           sx={{ whiteSpace: 'nowrap', textTransform: 'none' }}
         >
-          Processing...
+          Processing…
         </Button>
       )
     }
 
-    if (isThisEvent && status === 'recording') {
+    if (isActiveMic && session?.status === 'recording') {
       return (
         <Button
           variant="contained"
           size="small"
           color="error"
-          onClick={(e) => { e.stopPropagation(); stopRecording() }}
+          onClick={(e) => { e.stopPropagation(); stopRecording(event.id) }}
           startIcon={<FiberManualRecord />}
           sx={{
             whiteSpace: 'nowrap',
@@ -279,6 +306,12 @@ export default function CalendarEventCard({ event, selected, onSelect, onUpdate 
             )}
           </Box>
         </Collapse>
+
+        {session?.status === 'error' && (
+          <Typography variant="caption" color="error" sx={{ display: 'block', mt: 0.5 }}>
+            Transcription failed — check Settings to verify Whisper is installed.
+          </Typography>
+        )}
 
         <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 1 }}>
           {renderRecordButton()}

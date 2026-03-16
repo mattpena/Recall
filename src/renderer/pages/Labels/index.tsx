@@ -1,11 +1,13 @@
-import React, { useState } from 'react'
+import React, { useState, useMemo } from 'react'
 import {
   Box, Typography, Button, Card, CardContent, IconButton, Chip,
   Dialog, DialogTitle, DialogContent, DialogActions, TextField,
-  Grid, Alert, CircularProgress,
+  Grid, Alert, CircularProgress, InputAdornment, List, ListItemButton,
+  ListItemText, Collapse,
 } from '@mui/material'
-import { Autocomplete } from '@mui/material'
-import { Add, Edit, Delete, Search } from '@mui/icons-material'
+import {
+  Add, Edit, Delete, Search, ChevronRight, ExpandMore as ExpandMoreIcon, Clear, Folder, Article,
+} from '@mui/icons-material'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import type { ConfluencePage, CreateLabelInput, Label } from '../../../shared/types'
 
@@ -29,6 +31,248 @@ const emptyForm: LabelFormData = {
   confluencePageId: '',
   confluencePageName: '',
 }
+
+// ── Tree browser ─────────────────────────────────────────────────────────────
+
+interface PageTreeNodeProps {
+  page: ConfluencePage
+  allPages: ConfluencePage[]
+  depth: number
+  selectedId: string
+  expandedIds: Set<string>
+  onToggleExpand: (id: string) => void
+  onSelect: (page: ConfluencePage) => void
+}
+
+function PageTreeNode({
+  page, allPages, depth, selectedId, expandedIds, onToggleExpand, onSelect,
+}: PageTreeNodeProps): React.ReactElement {
+  const children = allPages.filter((p) => p.parentId === page.id)
+  const hasChildren = children.length > 0
+  const isExpanded = expandedIds.has(page.id)
+  const isSelected = selectedId === page.id
+
+  return (
+    <>
+      <ListItemButton
+        selected={isSelected}
+        onClick={() => onSelect(page)}
+        dense
+        sx={{ pl: 1 + depth * 2, pr: 1, py: 0.25, borderRadius: 0.5 }}
+      >
+        {/* Expand/collapse toggle */}
+        <Box
+          onClick={(e) => {
+            if (!hasChildren) return
+            e.stopPropagation()
+            onToggleExpand(page.id)
+          }}
+          sx={{
+            width: 20,
+            height: 20,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+            cursor: hasChildren ? 'pointer' : 'default',
+            mr: 0.5,
+            color: 'text.secondary',
+            '&:hover': hasChildren ? { color: 'primary.main' } : {},
+          }}
+        >
+          {hasChildren ? (
+            isExpanded
+              ? <ExpandMoreIcon sx={{ fontSize: 16 }} />
+              : <ChevronRight sx={{ fontSize: 16 }} />
+          ) : (
+            <Box sx={{ width: 16 }} />
+          )}
+        </Box>
+
+        {(page.isFolder || hasChildren)
+          ? <Folder sx={{ fontSize: 15, color: 'warning.main', mr: 0.75, flexShrink: 0 }} />
+          : <Article sx={{ fontSize: 15, color: 'text.disabled', mr: 0.75, flexShrink: 0 }} />
+        }
+
+        <ListItemText
+          primary={page.title}
+          primaryTypographyProps={{ variant: 'body2', noWrap: true }}
+        />
+      </ListItemButton>
+
+      {hasChildren && (
+        <Collapse in={isExpanded} unmountOnExit>
+          {children
+            .slice()
+            .sort((a, b) => a.title.localeCompare(b.title))
+            .map((child) => (
+              <PageTreeNode
+                key={child.id}
+                page={child}
+                allPages={allPages}
+                depth={depth + 1}
+                selectedId={selectedId}
+                expandedIds={expandedIds}
+                onToggleExpand={onToggleExpand}
+                onSelect={onSelect}
+              />
+            ))}
+        </Collapse>
+      )}
+    </>
+  )
+}
+
+interface PageTreeBrowserProps {
+  pages: ConfluencePage[]
+  selectedId: string
+  onSelect: (page: ConfluencePage | null) => void
+}
+
+function PageTreeBrowser({ pages, selectedId, onSelect }: PageTreeBrowserProps): React.ReactElement {
+  const [search, setSearch] = useState('')
+
+  // Root pages: those whose parentId doesn't match any page in the list
+  // (handles both null parentId and pages where the parent is the space root)
+  const pageIds = useMemo(() => new Set(pages.map((p) => p.id)), [pages])
+  const rootPages = useMemo(
+    () => pages.filter((p) => !p.parentId || !pageIds.has(p.parentId)),
+    [pages, pageIds]
+  )
+
+  // Start fully expanded so the complete tree is visible — user can collapse sections as needed
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(
+    () => new Set(pages.map((p) => p.id))
+  )
+
+  function toggleExpand(id: string): void {
+    setExpandedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  // When searching, show a filtered flat list with paths instead of the tree
+  const searchTerm = search.toLowerCase().trim()
+  const filteredPages = searchTerm
+    ? pages.filter(
+        (p) =>
+          p.title.toLowerCase().includes(searchTerm) ||
+          p.path.toLowerCase().includes(searchTerm)
+      )
+    : null
+
+  const selectedPage = pages.find((p) => p.id === selectedId)
+
+  return (
+    <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 1 }}>
+      {/* Search bar */}
+      <Box sx={{ p: 1, borderBottom: 1, borderColor: 'divider' }}>
+        <TextField
+          size="small"
+          fullWidth
+          placeholder="Search pages…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <Search sx={{ fontSize: 16, color: 'text.secondary' }} />
+              </InputAdornment>
+            ),
+            endAdornment: search ? (
+              <InputAdornment position="end">
+                <IconButton size="small" onClick={() => setSearch('')}>
+                  <Clear sx={{ fontSize: 14 }} />
+                </IconButton>
+              </InputAdornment>
+            ) : undefined,
+          }}
+          sx={{ '& .MuiOutlinedInput-root': { fontSize: '0.8125rem' } }}
+        />
+      </Box>
+
+      {/* Selected page indicator */}
+      {selectedPage && (
+        <Box
+          sx={{
+            px: 1.5, py: 0.75,
+            borderBottom: 1, borderColor: 'divider',
+            bgcolor: 'primary.50',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          }}
+        >
+          <Box sx={{ minWidth: 0 }}>
+            <Typography variant="caption" color="primary.main" fontWeight={600}>
+              Selected:
+            </Typography>
+            <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block', fontSize: '0.7rem' }}>
+              {selectedPage.path}
+            </Typography>
+          </Box>
+          <IconButton size="small" onClick={() => onSelect(null)} sx={{ ml: 1, flexShrink: 0 }}>
+            <Clear sx={{ fontSize: 14 }} />
+          </IconButton>
+        </Box>
+      )}
+
+      {/* Tree or search results */}
+      <List
+        dense
+        disablePadding
+        sx={{ maxHeight: 280, overflowY: 'auto', py: 0.5 }}
+      >
+        {filteredPages ? (
+          filteredPages.length === 0 ? (
+            <Box sx={{ px: 2, py: 1.5 }}>
+              <Typography variant="body2" color="text.secondary">No matching pages</Typography>
+            </Box>
+          ) : (
+            filteredPages
+              .slice()
+              .sort((a, b) => a.path.localeCompare(b.path))
+              .map((page) => (
+                <ListItemButton
+                  key={page.id}
+                  selected={selectedId === page.id}
+                  onClick={() => onSelect(page)}
+                  dense
+                  sx={{ px: 1.5, py: 0.25, borderRadius: 0.5 }}
+                >
+                  <ListItemText
+                    primary={page.title}
+                    secondary={page.path !== page.title ? page.path : undefined}
+                    primaryTypographyProps={{ variant: 'body2', noWrap: true }}
+                    secondaryTypographyProps={{ variant: 'caption', noWrap: true }}
+                  />
+                </ListItemButton>
+              ))
+          )
+        ) : (
+          rootPages
+            .slice()
+            .sort((a, b) => a.title.localeCompare(b.title))
+            .map((page) => (
+              <PageTreeNode
+                key={page.id}
+                page={page}
+                allPages={pages}
+                depth={0}
+                selectedId={selectedId}
+                expandedIds={expandedIds}
+                onToggleExpand={toggleExpand}
+                onSelect={onSelect}
+              />
+            ))
+        )}
+      </List>
+    </Box>
+  )
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
 
 export default function Labels(): React.ReactElement {
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -147,14 +391,13 @@ export default function Labels(): React.ReactElement {
     }
   }
 
-  // The currently selected page object (for Autocomplete value)
-  const selectedPage: ConfluencePage | null =
-    form.confluencePageId
-      ? (pages.find((p) => p.id === form.confluencePageId) ?? {
-          id: form.confluencePageId,
-          title: form.confluencePageName || form.confluencePageId,
-        })
-      : null
+  function handleSelectPage(page: ConfluencePage | null): void {
+    setForm((f) => ({
+      ...f,
+      confluencePageId: page?.id ?? '',
+      confluencePageName: page?.title ?? '',
+    }))
+  }
 
   const isSaving = createMutation.isPending || updateMutation.isPending
 
@@ -217,7 +460,7 @@ export default function Labels(): React.ReactElement {
                       Space: <strong>{label.confluenceSpaceKey}</strong>
                     </Typography>
                     {(label.confluencePageName || label.confluencePageId) && (
-                      <Typography variant="body2" noWrap>
+                      <Typography variant="body2" noWrap title={label.confluencePageName || label.confluencePageId}>
                         Parent: <strong>{label.confluencePageName || label.confluencePageId}</strong>
                       </Typography>
                     )}
@@ -296,43 +539,42 @@ export default function Labels(): React.ReactElement {
             <Alert severity="error" sx={{ py: 0.5 }}>{pagesError}</Alert>
           )}
 
-          {/* Page autocomplete — shown once pages are loaded or if we have a saved page */}
-          {(pagesBrowsed || form.confluencePageId) && (
-            pages.length === 0 && pagesBrowsed ? (
+          {/* Tree browser — shown once pages are loaded */}
+          {pagesBrowsed && (
+            pages.length === 0 ? (
               <Typography variant="body2" color="text.secondary">
                 No pages found in this space.
               </Typography>
             ) : (
-              <Autocomplete<ConfluencePage>
-                options={pages}
-                getOptionLabel={(option) => option.title}
-                isOptionEqualToValue={(option, value) => option.id === value.id}
-                value={selectedPage}
-                onChange={(_, newValue) => {
-                  setForm((f) => ({
-                    ...f,
-                    confluencePageId: newValue?.id ?? '',
-                    confluencePageName: newValue?.title ?? '',
-                  }))
-                }}
-                renderInput={(params) => (
-                  <TextField
-                    {...params}
-                    label="Parent Page"
-                    placeholder="Search pages…"
-                    size="small"
-                    helperText={
-                      pages.length > 0
-                        ? `${pages.length} pages loaded — type to filter`
-                        : 'Browse pages first to select a parent'
-                    }
-                  />
-                )}
-                noOptionsText="No matching pages"
-                clearOnEscape
-                size="small"
-              />
+              <Box>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                  {pages.length} pages — click to select a parent location. Use{' '}
+                  <strong>▶</strong> to expand sections.
+                </Typography>
+                <PageTreeBrowser
+                  pages={pages}
+                  selectedId={form.confluencePageId}
+                  onSelect={handleSelectPage}
+                />
+              </Box>
             )
+          )}
+
+          {/* If a page was previously saved but not yet browsed, show it */}
+          {!pagesBrowsed && form.confluencePageId && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Typography variant="body2" color="text.secondary">
+                Currently set to: <strong>{form.confluencePageName || form.confluencePageId}</strong>
+              </Typography>
+              <Button
+                size="small"
+                variant="text"
+                color="error"
+                onClick={() => handleSelectPage(null)}
+              >
+                Clear
+              </Button>
+            </Box>
           )}
         </DialogContent>
         <DialogActions>

@@ -84,36 +84,163 @@ async function resolveSpaceId(baseUrl: string, spaceKey: string): Promise<string
 
 export async function getSpacePages(spaceKey: string): Promise<ConfluencePage[]> {
   const baseUrl = getBaseUrl()
-  const allPages: ConfluencePage[] = []
-  const PAGE_SIZE = 250
-  let start = 0
+
+  // Step 1: resolve space key → numeric space ID (v2 API requires numeric ID)
+  const spaceId = await resolveSpaceId(baseUrl, spaceKey)
+
+  // Step 2: fetch ALL pages via v2 API — returns parentId + parentType correctly,
+  // including pages whose immediate parent is a Confluence Cloud folder.
+  type V2Page = {
+    id: string
+    title: string
+    parentId: string | null
+    parentType: string | null
+  }
+
+  const v2Pages: V2Page[] = []
+  let cursor: string | undefined
 
   while (true) {
-    const response = await fetch(
-      `${baseUrl}/wiki/rest/api/content?type=page&spaceKey=${encodeURIComponent(spaceKey)}&limit=${PAGE_SIZE}&start=${start}&orderby=title`,
-      {
-        headers: {
-          Authorization: getAuthHeader(),
-          Accept: 'application/json',
-        },
-      }
-    )
+    const url = new URL(`${baseUrl}/wiki/api/v2/pages`)
+    url.searchParams.set('space-id', spaceId)
+    url.searchParams.set('limit', '250')
+    if (cursor) url.searchParams.set('cursor', cursor)
+
+    const response = await fetch(url.toString(), {
+      headers: { Authorization: getAuthHeader(), Accept: 'application/json' },
+    })
 
     if (!response.ok) {
       const text = await response.text()
       throw new Error(`Failed to fetch Confluence pages: ${response.status} ${text}`)
     }
 
-    const data = (await response.json()) as { results?: Array<{ id: string; title: string }> }
-    const results = data.results ?? []
-    allPages.push(...results.map((p) => ({ id: p.id, title: p.title })))
+    const data = (await response.json()) as {
+      results?: V2Page[]
+      _links?: { next?: string }
+    }
 
-    // Stop if we got fewer results than the page size (last page) or hit safety cap
-    if (results.length < PAGE_SIZE || allPages.length >= 2000) break
-    start += PAGE_SIZE
+    const results = data.results ?? []
+    v2Pages.push(...results)
+
+    // v2 pagination uses cursor-based links
+    const nextLink = data._links?.next
+    if (!nextLink || results.length === 0 || v2Pages.length >= 2000) break
+
+    // Extract cursor from the next link query string
+    const nextUrl = new URL(`${baseUrl}${nextLink}`)
+    cursor = nextUrl.searchParams.get('cursor') ?? undefined
+    if (!cursor) break
   }
 
-  return allPages
+  // Step 3: collect unique folder IDs (parentType === 'folder')
+  const folderIds = new Set<string>()
+  for (const page of v2Pages) {
+    if (page.parentId && page.parentType === 'folder') {
+      folderIds.add(page.parentId)
+    }
+  }
+
+  // Step 4: fetch folder details individually via v1 API with expand=ancestors
+  // so we get each folder's title and its own ancestor chain.
+  type V1Content = {
+    id: string
+    title: string
+    ancestors?: Array<{ id: string; title: string; type?: string }>
+  }
+
+  const folderDetails = new Map<string, V1Content>()
+  await Promise.all(
+    Array.from(folderIds).map(async (folderId) => {
+      try {
+        const response = await fetch(
+          `${baseUrl}/wiki/rest/api/content/${encodeURIComponent(folderId)}?expand=ancestors`,
+          { headers: { Authorization: getAuthHeader(), Accept: 'application/json' } }
+        )
+        if (!response.ok) return
+        const data = (await response.json()) as V1Content
+        folderDetails.set(folderId, data)
+        // Also discover ancestor folder IDs we haven't seen yet
+        for (const anc of data.ancestors ?? []) {
+          if (!folderIds.has(anc.id)) {
+            folderIds.add(anc.id)
+          }
+        }
+      } catch {
+        // ignore individual folder fetch failures
+      }
+    })
+  )
+
+  // Fetch any newly discovered ancestor folders (one extra pass is enough in practice)
+  const secondPassIds = Array.from(folderIds).filter((id) => !folderDetails.has(id))
+  await Promise.all(
+    secondPassIds.map(async (folderId) => {
+      try {
+        const response = await fetch(
+          `${baseUrl}/wiki/rest/api/content/${encodeURIComponent(folderId)}?expand=ancestors`,
+          { headers: { Authorization: getAuthHeader(), Accept: 'application/json' } }
+        )
+        if (!response.ok) return
+        const data = (await response.json()) as V1Content
+        folderDetails.set(folderId, data)
+      } catch {
+        // ignore
+      }
+    })
+  )
+
+  // Step 5: build a complete node map
+  const nodesById = new Map<string, ConfluencePage>()
+
+  // Add all folder nodes first, synthesising ancestor chain from v1 ancestors array
+  for (const [, folder] of folderDetails) {
+    const ancestors = folder.ancestors ?? []
+
+    // Synthesise any ancestor nodes not already present
+    for (let i = 0; i < ancestors.length; i++) {
+      const anc = ancestors[i]
+      if (!nodesById.has(anc.id)) {
+        nodesById.set(anc.id, {
+          id: anc.id,
+          title: anc.title,
+          parentId: i > 0 ? ancestors[i - 1].id : null,
+          path: ancestors.slice(0, i + 1).map((a) => a.title).join(' / '),
+          isFolder: true,
+        })
+      }
+    }
+
+    const parentId = ancestors.length > 0 ? ancestors[ancestors.length - 1].id : null
+    const path = [...ancestors.map((a) => a.title), folder.title].join(' / ')
+    nodesById.set(folder.id, { id: folder.id, title: folder.title, parentId, path, isFolder: true })
+  }
+
+  // Add all page nodes
+  for (const page of v2Pages) {
+    nodesById.set(page.id, {
+      id: page.id,
+      title: page.title,
+      parentId: page.parentId,
+      path: '', // computed in next pass
+    })
+  }
+
+  // Step 6: compute paths for all nodes via parent traversal
+  function getPath(id: string, visited = new Set<string>()): string {
+    if (visited.has(id)) return '' // cycle guard
+    visited.add(id)
+    const node = nodesById.get(id)
+    if (!node) return ''
+    if (!node.parentId || !nodesById.has(node.parentId)) return node.title
+    return getPath(node.parentId, visited) + ' / ' + node.title
+  }
+
+  for (const node of nodesById.values()) {
+    node.path = getPath(node.id)
+  }
+
+  return Array.from(nodesById.values())
 }
 
 /** Strip HTML tags and collapse whitespace to plain text */
