@@ -144,6 +144,7 @@ export function registerAllIpcHandlers(): void {
   ipcMain.handle('slack:connect', () => slackService.startOAuth())
   ipcMain.handle('slack:disconnect', () => slackService.disconnect())
   ipcMain.handle('slack:getChannels', () => slackService.getChannels())
+  ipcMain.handle('slack:getUsers', () => slackService.getUsers())
   ipcMain.handle('slack:postMessage', (_, channelId: string, text: string) =>
     slackService.postMessage(channelId, text)
   )

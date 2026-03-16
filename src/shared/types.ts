@@ -116,6 +116,12 @@ export interface SlackChannel {
   name: string
 }
 
+export interface SlackUser {
+  id: string
+  name: string        // display name / username
+  realName: string    // full name
+}
+
 export interface SlackStatus {
   connected: boolean
   teamName: string | null

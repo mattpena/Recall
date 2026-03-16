@@ -1,7 +1,7 @@
 import { shell } from 'electron'
 import { createServer, IncomingMessage, ServerResponse } from 'http'
 import Store from 'electron-store'
-import type { SlackChannel, SlackStatus } from '../../shared/types'
+import type { SlackChannel, SlackUser, SlackStatus } from '../../shared/types'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function getKeytar(): Promise<any> {
@@ -146,6 +146,29 @@ export async function disconnect(): Promise<void> {
   store.delete(STORE_USER_KEY as never)
 }
 
+export async function getUsers(): Promise<SlackUser[]> {
+  const keytar = await getKeytar()
+  const token = await keytar.getPassword(KEYTAR_SERVICE, KEYTAR_ACCOUNT)
+  if (!token) throw new Error('Slack not connected')
+
+  const params = new URLSearchParams({ limit: '200', exclude_archived: 'true' })
+  const res = await fetch(`https://slack.com/api/users.list?${params.toString()}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const data = (await res.json()) as any
+  if (!data.ok) throw new Error(`Failed to fetch Slack users: ${data.error}`)
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (data.members as any[])
+    .filter((m) => !m.is_bot && !m.deleted && m.id !== 'USLACKBOT')
+    .map((m) => ({
+      id: m.id as string,
+      name: (m.profile?.display_name || m.name) as string,
+      realName: (m.profile?.real_name || m.name) as string,
+    }))
+}
+
 export async function getChannels(): Promise<SlackChannel[]> {
   const keytar = await getKeytar()
   const token = await keytar.getPassword(KEYTAR_SERVICE, KEYTAR_ACCOUNT)
@@ -167,10 +190,24 @@ export async function getChannels(): Promise<SlackChannel[]> {
   return (data.channels as any[]).map((c) => ({ id: c.id as string, name: c.name as string }))
 }
 
-export async function postMessage(channelId: string, text: string): Promise<void> {
+export async function postMessage(target: string, text: string): Promise<void> {
   const keytar = await getKeytar()
   const token = await keytar.getPassword(KEYTAR_SERVICE, KEYTAR_ACCOUNT)
   if (!token) throw new Error('Slack not connected')
+
+  // If target is a user ID (starts with U), open a DM channel first
+  let channelId = target
+  if (target.startsWith('U')) {
+    const dmRes = await fetch('https://slack.com/api/conversations.open', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ users: target }),
+    })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const dmData = (await dmRes.json()) as any
+    if (!dmData.ok) throw new Error(`Failed to open DM: ${dmData.error}`)
+    channelId = dmData.channel.id
+  }
 
   const res = await fetch('https://slack.com/api/chat.postMessage', {
     method: 'POST',

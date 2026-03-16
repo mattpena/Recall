@@ -8,6 +8,7 @@ import type {
   Label,
   PendingTranscription,
   SlackChannel,
+  SlackUser,
   SlackStatus,
   Synthesis,
   Transcript,
@@ -163,6 +164,7 @@ const electronAPI = {
     connect: (): Promise<SlackStatus> => ipcRenderer.invoke('slack:connect'),
     disconnect: (): Promise<void> => ipcRenderer.invoke('slack:disconnect'),
     getChannels: (): Promise<SlackChannel[]> => ipcRenderer.invoke('slack:getChannels'),
+    getUsers: (): Promise<SlackUser[]> => ipcRenderer.invoke('slack:getUsers'),
     postMessage: (channelId: string, text: string): Promise<void> =>
       ipcRenderer.invoke('slack:postMessage', channelId, text),
   },
